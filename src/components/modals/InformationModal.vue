@@ -31,37 +31,12 @@ export default {
       <InformationModalButton
         name="GitHub repository"
         icon="fa-brands fa-github"
-        link="https://github.com/IvarK/AntimatterDimensionsSourceCode"
-      />
-      <InformationModalButton
-        name="r/AntimatterDimensions"
-        icon="fa-brands fa-reddit-alien"
-        link="https://www.reddit.com/r/AntimatterDimensions/"
+        link="https://github.com/appipinopi/AntimatterDimensions-MOD-Loader-Test"
       />
       <InformationModalButton
         name="Antimatter Dimensions Discord Server"
         icon="fa-brands fa-discord"
         link="https://discord.gg/ST9NaXa"
-      />
-      <InformationModalButton
-        name="Antimatter Dimensions on Google Play"
-        icon="fa-brands fa-google-play"
-        link="https://play.google.com/store/apps/details?id=kajfosz.antimatterdimensions"
-      />
-      <InformationModalButton
-        name="Antimatter Dimensions on Steam"
-        icon="fa-brands fa-steam"
-        link="https://store.steampowered.com/app/1399720/Antimatter_Dimensions/"
-      />
-      <InformationModalButton
-        name="Credits"
-        icon="fa-solid fa-users"
-        show-modal="credits"
-      />
-      <InformationModalButton
-        name="Game Changelog"
-        icon="fa-solid fa-file-lines"
-        show-modal="changelog"
       />
     </div>
   </div>
