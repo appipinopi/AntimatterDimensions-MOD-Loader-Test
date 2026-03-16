@@ -1,0 +1,9 @@
+﻿{
+  "schemaVersion": 1,
+  "mods": [
+    {
+      "id": "example-ui-mod",
+      "enabled": true
+    }
+  ]
+}

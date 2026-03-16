@@ -8,6 +8,7 @@ import { DEV } from "@/env";
 import { SpeedrunMilestones } from "./core/speedrun";
 import { Cloud } from "./core/storage";
 import { supportedBrowsers } from "./supported-browsers";
+import { ModManager } from "@/core/mods/mod-manager";
 
 import Payments from "./core/payments";
 
@@ -1089,12 +1090,14 @@ export function init() {
     // eslint-disable-next-line no-console
     console.log("👨‍💻 Development Mode 👩‍💻");
   }
+  ModManager.runHook("preInit");
   ElectronRuntime.initialize();
   SteamRuntime.initialize();
   Cloud.init();
   GameStorage.load();
   Tabs.all.find(t => t.config.id === player.options.lastOpenTab).show(true);
   Payments.init();
+  ModManager.runHook("postInit");
 }
 
 window.tweenTime = 0;
