@@ -88,25 +88,25 @@ export default {
 </script>
 
 <template>
-  <div class="mod-menu">
-    <div class="mod-menu__header">
-      <div class="mod-menu__title">MOD MENU</div>
-      <div class="mod-menu__subtitle">Manage sources, load order, and enable states</div>
+  <div class="mod-modern">
+    <div class="mod-modern__header">
+      <div class="mod-modern__title">MOD MENU</div>
+      <div class="mod-modern__subtitle">Manage sources, load order, and enable states</div>
     </div>
 
-    <div class="mod-menu__section mod-menu__section--controls">
-      <div class="mod-menu__block">
-        <div class="mod-menu__label">Source</div>
-        <div class="mod-menu__toggle">
+    <div class="mod-modern__row">
+      <div class="mod-modern__card mod-modern__card--tight">
+        <div class="mod-modern__label">Source</div>
+        <div class="mod-modern__toggle">
           <button
-            class="mod-menu__toggle-btn"
+            class="mod-modern__pill"
             :class="{ 'is-active': modSourceIsUrl }"
             @click="setSource('url')"
           >
             URL
           </button>
           <button
-            class="mod-menu__toggle-btn"
+            class="mod-modern__pill"
             :class="{ 'is-active': !modSourceIsUrl }"
             @click="setSource('zip')"
           >
@@ -114,133 +114,92 @@ export default {
           </button>
         </div>
       </div>
-      <div class="mod-menu__block">
-        <div class="mod-menu__label">Actions</div>
-        <button class="mod-menu__btn" @click="reloadMods">
-          Reload Mods
-        </button>
+      <div class="mod-modern__card mod-modern__card--tight">
+        <div class="mod-modern__label">Actions</div>
+        <button class="mod-modern__btn" @click="reloadMods">Reload Mods</button>
       </div>
     </div>
 
-    <div v-if="modSourceIsUrl" class="mod-menu__section">
-      <div class="mod-menu__field">
-        <label class="mod-menu__label">Mod list URL</label>
-        <input
-          class="mod-menu__input"
-          type="text"
-          placeholder="mods/mods.json or https://..."
-          :value="modListUrl"
-          @change="handleModListUrlChange"
-        >
-      </div>
+    <div v-if="modSourceIsUrl" class="mod-modern__card">
+      <div class="mod-modern__label">Mod list URL</div>
+      <input
+        class="mod-modern__input"
+        type="text"
+        placeholder="mods/mods.json or https://..."
+        :value="modListUrl"
+        @change="handleModListUrlChange"
+      >
     </div>
 
-    <div v-else class="mod-menu__section">
-      <div class="mod-menu__field">
-        <label class="mod-menu__label">ZIP URL</label>
-        <input
-          class="mod-menu__input"
-          type="text"
-          placeholder="https://example.com/mods.zip"
-          :value="modZipUrl"
-          @change="handleModZipUrlChange"
-        >
-      </div>
-      <div class="mod-menu__zip-row">
-        <label class="mod-menu__file">
+    <div v-else class="mod-modern__card">
+      <div class="mod-modern__label">ZIP URL</div>
+      <input
+        class="mod-modern__input"
+        type="text"
+        placeholder="https://example.com/mods.zip"
+        :value="modZipUrl"
+        @change="handleModZipUrlChange"
+      >
+      <div class="mod-modern__zip-row">
+        <label class="mod-modern__file">
           <input
-            class="mod-menu__file-input"
+            class="mod-modern__file-input"
             type="file"
             accept=".zip"
             @change="onZipFileSelected"
           >
           <span>Choose ZIP</span>
         </label>
-        <button class="mod-menu__btn" @click="loadZipFile">
+        <button class="mod-modern__btn mod-modern__btn--ghost" @click="loadZipFile">
           Load ZIP {{ modZipFileName ? "(" + modZipFileName + ")" : "" }}
         </button>
       </div>
     </div>
 
-    <div class="mod-menu__section mod-menu__section--lists">
-      <div class="mod-menu__panel">
-        <div class="mod-menu__panel-title">
-          Loaded Mods <span>({{ loadedMods.length }})</span>
-        </div>
-        <div v-if="loadedMods.length === 0" class="mod-menu__empty">
-          No mods loaded
-        </div>
-        <div v-else class="mod-menu__list">
-          <div
-            v-for="mod in loadedMods"
-            :key="mod.id"
-            class="mod-menu__item"
-          >
-            <div class="mod-menu__item-title">
+    <div class="mod-modern__row">
+      <div class="mod-modern__card">
+        <div class="mod-modern__card-title">Loaded Mods ({{ loadedMods.length }})</div>
+        <div v-if="loadedMods.length === 0" class="mod-modern__empty">No mods loaded</div>
+        <div v-else class="mod-modern__list">
+          <div v-for="mod in loadedMods" :key="mod.id" class="mod-modern__item">
+            <div class="mod-modern__item-title">
               {{ mod.name }} <span v-if="mod.version">({{ mod.version }})</span>
             </div>
-            <div v-if="mod.description" class="mod-menu__item-desc">
-              {{ mod.description }}
-            </div>
-            <div class="mod-menu__item-meta">
-              id: {{ mod.id }}
-            </div>
+            <div v-if="mod.description" class="mod-modern__item-desc">{{ mod.description }}</div>
+            <div class="mod-modern__item-meta">id: {{ mod.id }}</div>
           </div>
         </div>
       </div>
-
-      <div v-if="modErrors.length > 0" class="mod-menu__panel">
-        <div class="mod-menu__panel-title mod-menu__panel-title--warn">
-          Mod Errors <span>({{ modErrors.length }})</span>
-        </div>
-        <div class="mod-menu__list">
-          <div
-            v-for="(err, index) in modErrors"
-            :key="`err-${err.id || 'unknown'}-${index}`"
-            class="mod-menu__item mod-menu__item--warn"
-          >
-            <div class="mod-menu__item-title">
-              {{ err.id || "unknown" }}
-            </div>
-            <div class="mod-menu__item-desc">
-              {{ formatErrorMessage(err) }}
-            </div>
+      <div v-if="modErrors.length > 0" class="mod-modern__card">
+        <div class="mod-modern__card-title mod-modern__card-title--warn">Mod Errors ({{ modErrors.length }})</div>
+        <div class="mod-modern__list">
+          <div v-for="(err, index) in modErrors" :key="`err-${err.id || 'unknown'}-${index}`" class="mod-modern__item">
+            <div class="mod-modern__item-title mod-modern__item-title--warn">{{ err.id || "unknown" }}</div>
+            <div class="mod-modern__item-desc">{{ formatErrorMessage(err) }}</div>
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="mod-menu__panel mod-menu__panel--wide">
-        <div class="mod-menu__panel-title">
-          Available Mods <span>({{ availableMods.length }})</span>
-        </div>
-        <div v-if="availableMods.length === 0" class="mod-menu__empty">
-          No mods found
-        </div>
-        <div v-else class="mod-menu__list">
-          <div
-            v-for="mod in availableMods"
-            :key="`available-${mod.id}`"
-            class="mod-menu__item mod-menu__item--row"
-          >
-            <div class="mod-menu__item-info">
-              <div class="mod-menu__item-title">
-                {{ mod.name || mod.id }} <span v-if="mod.version">({{ mod.version }})</span>
-              </div>
-              <div v-if="mod.description" class="mod-menu__item-desc">
-                {{ mod.description }}
-              </div>
-              <div class="mod-menu__item-meta">
-                id: {{ mod.id }}
-              </div>
+    <div class="mod-modern__card mod-modern__card--wide">
+      <div class="mod-modern__card-title">Available Mods ({{ availableMods.length }})</div>
+      <div v-if="availableMods.length === 0" class="mod-modern__empty">No mods found</div>
+      <div v-else class="mod-modern__list">
+        <div v-for="mod in availableMods" :key="`available-${mod.id}`" class="mod-modern__item mod-modern__item--row">
+          <div class="mod-modern__item-info">
+            <div class="mod-modern__item-title">
+              {{ mod.name || mod.id }} <span v-if="mod.version">({{ mod.version }})</span>
             </div>
-            <button
-              class="mod-menu__toggle-btn mod-menu__toggle-btn--small"
-              :class="{ 'is-active': isModEnabled(mod.id) }"
-              @click="toggleMod(mod.id)"
-            >
-              {{ isModEnabled(mod.id) ? "ON" : "OFF" }}
-            </button>
+            <div v-if="mod.description" class="mod-modern__item-desc">{{ mod.description }}</div>
+            <div class="mod-modern__item-meta">id: {{ mod.id }}</div>
           </div>
+          <button
+            class="mod-modern__pill mod-modern__pill--small"
+            :class="{ 'is-active': isModEnabled(mod.id) }"
+            @click="toggleMod(mod.id)"
+          >
+            {{ isModEnabled(mod.id) ? "ON" : "OFF" }}
+          </button>
         </div>
       </div>
     </div>
@@ -248,247 +207,204 @@ export default {
 </template>
 
 <style scoped>
-.mod-menu {
-  --mod-bg: #141419;
-  --mod-card: #1f2229;
-  --mod-ink: #f2f2f2;
-  --mod-muted: #a6a6b3;
-  --mod-accent: #f6c453;
-  --mod-accent-2: #5ed5ff;
-  --mod-danger: #ff6b6b;
-  min-height: 100%;
+.mod-modern {
   padding: 2rem 2.4rem 3rem;
-  background: radial-gradient(1200px 500px at 10% -10%, #2a2d35, transparent),
-    radial-gradient(900px 500px at 110% 0%, #262029, transparent),
-    var(--mod-bg);
-  color: var(--mod-ink);
-  font-family: "PT Mono", monospace;
+  color: #ffffff;
+  font-family: Typewriter, "PT Mono", monospace;
 }
 
-.mod-menu__header {
-  margin-bottom: 2rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding-bottom: 1rem;
+.mod-modern__header {
+  text-align: center;
+  margin-bottom: 1.4rem;
 }
 
-.mod-menu__title {
-  font-size: 2.6rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.mod-modern__title {
+  font-size: 2.2rem;
+  letter-spacing: 0.16em;
+  color: #ffffff;
 }
 
-.mod-menu__subtitle {
+.mod-modern__subtitle {
   margin-top: 0.4rem;
-  color: var(--mod-muted);
   font-size: 1.2rem;
+  color: #ffffff;
 }
 
-.mod-menu__section {
-  background: var(--mod-card);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 1.6rem 1.8rem;
-  margin-bottom: 1.6rem;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+.mod-modern__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.2rem;
+  margin-bottom: 1.2rem;
 }
 
-.mod-menu__section--controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.4rem;
-  align-items: flex-end;
+.mod-modern__card {
+  background: rgba(20, 22, 28, 0.92);
+  border: 1px solid rgba(90, 255, 140, 0.6);
+  border-radius: 12px;
+  padding: 1.4rem 1.6rem;
 }
 
-.mod-menu__block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
+.mod-modern__card--tight {
+  padding: 1.2rem 1.4rem;
 }
 
-.mod-menu__label {
+.mod-modern__card--wide {
+  margin-top: 0.6rem;
+}
+
+.mod-modern__label {
   font-size: 1.1rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--mod-muted);
+  color: #ffffff;
+  margin-bottom: 0.7rem;
 }
 
-.mod-menu__toggle {
+.mod-modern__toggle {
   display: flex;
   gap: 0.6rem;
 }
 
-.mod-menu__toggle-btn,
-.mod-menu__btn {
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: #1a1d24;
-  color: var(--mod-ink);
-  padding: 0.7rem 1.4rem;
+.mod-modern__pill,
+.mod-modern__btn {
   border-radius: 999px;
+  padding: 0.6rem 1.3rem;
   font-size: 1.2rem;
-  letter-spacing: 0.05em;
+  border: 1px solid rgba(90, 255, 140, 0.6);
+  background: rgba(25, 26, 34, 0.9);
+  color: #ffffff;
   transition: all 0.2s ease;
 }
 
-.mod-menu__toggle-btn.is-active {
-  background: linear-gradient(135deg, #f6c453, #f1a44b);
-  color: #1b1b1b;
-  border-color: rgba(246, 196, 83, 0.8);
-  box-shadow: 0 8px 18px rgba(246, 196, 83, 0.3);
+.mod-modern__pill.is-active {
+  background: linear-gradient(135deg, #49d46b, #8be86b);
+  color: #ffffff;
+  border-color: rgba(90, 255, 140, 0.9);
+  box-shadow: 0 6px 16px rgba(90, 255, 140, 0.35);
 }
 
-.mod-menu__toggle-btn--small {
-  min-width: 76px;
+.mod-modern__pill--small {
+  min-width: 72px;
   text-align: center;
 }
 
-.mod-menu__btn {
-  background: linear-gradient(135deg, #1f2732, #141820);
-  border-color: rgba(94, 213, 255, 0.35);
-  color: var(--mod-accent-2);
+.mod-modern__btn {
+  background: linear-gradient(135deg, #2a3b2f, #1a2a1f);
+  color: #ffffff;
+  border-color: rgba(90, 255, 140, 0.6);
 }
 
-.mod-menu__btn:hover,
-.mod-menu__toggle-btn:hover {
-  transform: translateY(-1px);
+.mod-modern__btn--ghost {
+  background: rgba(90, 255, 140, 0.12);
+  color: #ffffff;
 }
 
-.mod-menu__field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.mod-menu__input {
-  background: #11131a;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: var(--mod-ink);
+.mod-modern__input {
+  width: 100%;
+  background: rgba(14, 15, 19, 0.95);
+  border: 1px solid rgba(90, 255, 140, 0.6);
+  color: #ffffff;
   padding: 0.7rem 1rem;
   border-radius: 10px;
   font-size: 1.2rem;
+}
+
+.mod-modern__input:focus {
   outline: none;
+  border-color: rgba(90, 255, 140, 0.9);
+  box-shadow: 0 0 0 2px rgba(90, 255, 140, 0.2);
 }
 
-.mod-menu__input:focus {
-  border-color: rgba(246, 196, 83, 0.7);
-  box-shadow: 0 0 0 2px rgba(246, 196, 83, 0.2);
-}
-
-.mod-menu__zip-row {
+.mod-modern__zip-row {
   display: flex;
-  gap: 1rem;
+  gap: 0.8rem;
   flex-wrap: wrap;
   align-items: center;
+  margin-top: 1rem;
 }
 
-.mod-menu__file {
+.mod-modern__file {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed rgba(255, 255, 255, 0.2);
   padding: 0.6rem 1.2rem;
   border-radius: 10px;
-  color: var(--mod-muted);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(90, 255, 140, 0.6);
+  color: #ffffff;
   cursor: pointer;
 }
 
-.mod-menu__file-input {
+.mod-modern__file-input {
   display: none;
 }
 
-.mod-menu__section--lists {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1.2rem;
-}
-
-.mod-menu__panel {
-  background: #161922;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  padding: 1.2rem;
-  min-height: 120px;
-}
-
-.mod-menu__panel--wide {
-  grid-column: 1 / -1;
-}
-
-.mod-menu__panel-title {
+.mod-modern__card-title {
   font-size: 1.2rem;
-  letter-spacing: 0.06em;
-  color: var(--mod-accent);
-  text-transform: uppercase;
-  margin-bottom: 1rem;
+  color: #ffffff;
+  margin-bottom: 0.9rem;
 }
 
-.mod-menu__panel-title--warn {
-  color: var(--mod-danger);
+.mod-modern__card-title--warn {
+  color: #ffffff;
 }
 
-.mod-menu__list {
+.mod-modern__list {
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
-  max-height: 32rem;
+  max-height: 30rem;
   overflow: auto;
 }
 
-.mod-menu__item {
+.mod-modern__item {
   padding-bottom: 0.8rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.mod-menu__item:last-child {
+.mod-modern__item:last-child {
   border-bottom: none;
 }
 
-.mod-menu__item-title {
+.mod-modern__item-title {
   font-size: 1.3rem;
   font-weight: bold;
 }
 
-.mod-menu__item-desc {
+.mod-modern__item-title--warn {
+  color: #ffffff;
+}
+
+.mod-modern__item-desc {
   font-size: 1.1rem;
-  color: var(--mod-muted);
+  color: #ffffff;
 }
 
-.mod-menu__item-meta {
+.mod-modern__item-meta {
   font-size: 1rem;
-  color: rgba(255, 255, 255, 0.45);
+  color: #ffffff;
 }
 
-.mod-menu__item--row {
+.mod-modern__item--row {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
   align-items: center;
 }
 
-.mod-menu__item-info {
+.mod-modern__item-info {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
 }
 
-.mod-menu__item--warn .mod-menu__item-title {
-  color: var(--mod-danger);
-}
-
-.mod-menu__empty {
+.mod-modern__empty {
   font-size: 1.1rem;
-  color: var(--mod-muted);
+  color: #ffffff;
 }
 
 @media (max-width: 900px) {
-  .mod-menu__section--controls {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .mod-menu__section--lists {
+  .mod-modern__row {
     grid-template-columns: 1fr;
   }
-  .mod-menu__item--row {
+  .mod-modern__item--row {
     flex-direction: column;
     align-items: flex-start;
   }
