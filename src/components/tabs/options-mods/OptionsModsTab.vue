@@ -80,6 +80,12 @@ export default {
       if (!player.options.modLoader) player.options.modLoader = {};
       player.options.modLoader.disabledMods = next.disabledMods;
       await this.reloadMods();
+    },
+    formatErrorMessage(err) {
+      if (!err) return "Unknown error";
+      if (err.error && err.error.message) return err.error.message;
+      if (err.message) return err.message;
+      return "Unknown error";
     }
   }
 };
@@ -145,7 +151,7 @@ export default {
           class="o-primary-btn--option l-options-grid__button"
           @click="loadZipFile"
         >
-          Load ZIP {{ modZipFileName ? `(${modZipFileName})` : "" }}
+          Load ZIP {{ modZipFileName ? "(" + modZipFileName + ")" : "" }}
         </OptionsButton>
       </div>
       <div class="l-options-grid__row">
@@ -187,7 +193,7 @@ export default {
                 {{ err.id || "unknown" }}
               </div>
               <div class="c-mod-loader-list__desc">
-                {{ err.error?.message || "Unknown error" }}
+                {{ formatErrorMessage(err) }}
               </div>
             </div>
           </div>
