@@ -244,6 +244,7 @@ export const ModManager = {
   loaded: false,
   mods: [],
   errors: [],
+  _gameSpeedMultiplier: 1,
   _hooks: {
     [HOOKS.PRE_INIT]: [],
     [HOOKS.POST_INIT]: [],
@@ -253,6 +254,16 @@ export const ModManager = {
   },
   _eventBridgeInstalled: false,
   _zipSource: null,
+
+  setGameSpeedMultiplier(value) {
+    const next = Number(value);
+    if (!Number.isFinite(next) || next <= 0) return;
+    this._gameSpeedMultiplier = next;
+  },
+
+  getGameSpeedMultiplier() {
+    return this._gameSpeedMultiplier;
+  },
 
   getConfig() {
     try {

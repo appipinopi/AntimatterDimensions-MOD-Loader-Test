@@ -44,7 +44,7 @@ export const state = {
     currentContextMenu: null,
     tab: "dimensions",
     subtab: "antimatter",
-    newUI: false,
+    newUI: true,
     news: false,
     initialized: false,
     tutorialState: 0,

@@ -21,7 +21,30 @@ export default defineMod({
 
 ## Helpers
 - `defineMod(def)` registers hook handlers in one place
+- `registerAchievement(api, def)` registers a mod achievement with UI display
+- `unlockAchievement(api, id)` manually unlocks a mod achievement
+- `setGameSpeed(multiplier)` sets global game speed multiplier
+- `getGameSpeed()` reads current game speed multiplier
+- `withGameSpeed(multiplier, fn)` runs a function under a temporary speed
 - `addStyle(cssText, id)` injects CSS
 - `addStylesheet(url, id)` injects external CSS
 - `createPanel(api, options)` creates a container under `#ui` (or custom parent)
 - `waitForElement(selector, options)` waits for DOM element to appear
+
+## Mod Achievements
+You can register achievements with UI display and a condition:
+
+```js
+export default defineMod({
+  achievements: [
+    {
+      id: "fast-start",
+      name: "Fast Start",
+      description: "Reach 1e6 antimatter",
+      condition: () => player.antimatter?.log10?.() >= 6,
+    },
+  ],
+});
+```
+
+Achievements are stored in localStorage under `admod:ach:*`.
