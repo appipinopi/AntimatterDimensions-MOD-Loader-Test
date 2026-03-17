@@ -23,6 +23,7 @@ import MultiplierBreakdownTab from "./statistics/MultiplierBreakdownTab";
 import NormalAchievementsTab from "./normal-achievements/NormalAchievementsTab";
 import NormalChallengesTab from "./normal-challenges/NormalChallengesTab";
 import OptionsGameplayTab from "./options-gameplay/OptionsGameplayTab";
+import OptionsModsTab from "./options-mods/OptionsModsTab";
 import OptionsSavingTab from "./options-saving/OptionsSavingTab";
 import OptionsVisualTab from "./options-visual/OptionsVisualTab";
 import PastPrestigeRunsTab from "./past-prestige-runs/PastPrestigeRunsTab";
@@ -49,6 +50,7 @@ const TabComponents = {
   OptionsSavingTab,
   OptionsVisualTab,
   OptionsGameplayTab,
+  OptionsModsTab,
   StatisticsTab,
   ChallengeRecordsTab,
   PastPrestigeRunsTab,

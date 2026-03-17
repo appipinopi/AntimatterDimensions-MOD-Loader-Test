@@ -69,6 +69,14 @@ export const tabs = [
         component: "OptionsGameplayTab",
         id: 2,
         hidable: false,
+      },
+      {
+        key: "mods",
+        name: "Mods",
+        symbol: "<i class='fas fa-puzzle-piece'></i>",
+        component: "OptionsModsTab",
+        id: 3,
+        hidable: false,
       }
     ]
   },
