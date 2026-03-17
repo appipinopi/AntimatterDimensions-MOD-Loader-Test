@@ -13,7 +13,6 @@ export default {
     return {
       modSourceIsUrl: true,
       modListUrl: "",
-      modCdnBaseUrl: "",
       modZipUrl: "",
       modZipFileName: "",
       modZipFile: null,
@@ -30,7 +29,6 @@ export default {
       const modConfig = ModManager.getConfig();
       this.modSourceIsUrl = modConfig.mode !== "zip";
       this.modListUrl = modConfig.listUrl;
-      this.modCdnBaseUrl = modConfig.cdnBaseUrl;
       this.modZipUrl = modConfig.zipUrl;
     },
     applyModConfig(partial) {
@@ -38,18 +36,12 @@ export default {
       if (!player.options.modLoader) player.options.modLoader = {};
       player.options.modLoader.mode = next.mode;
       player.options.modLoader.listUrl = next.listUrl;
-      player.options.modLoader.cdnBaseUrl = next.cdnBaseUrl;
       player.options.modLoader.zipUrl = next.zipUrl;
     },
     handleModListUrlChange(event) {
       const value = event.target.value.trim();
       this.modListUrl = value;
       this.applyModConfig({ listUrl: value });
-    },
-    handleModCdnBaseUrlChange(event) {
-      const value = event.target.value.trim();
-      this.modCdnBaseUrl = value;
-      this.applyModConfig({ cdnBaseUrl: value });
     },
     handleModZipUrlChange(event) {
       const value = event.target.value.trim();
@@ -104,16 +96,6 @@ export default {
             placeholder="mods/mods.json or https://..."
             :value="modListUrl"
             @change="handleModListUrlChange"
-          >
-        </div>
-        <div class="o-primary-btn o-primary-btn--option o-primary-btn--input l-options-grid__button c-mod-loader-input">
-          <b>CDN base URL:</b>
-          <input
-            class="c-mod-loader-input__field"
-            type="text"
-            placeholder="https://cdn.example.com/"
-            :value="modCdnBaseUrl"
-            @change="handleModCdnBaseUrlChange"
           >
         </div>
       </div>
