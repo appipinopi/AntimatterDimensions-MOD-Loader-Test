@@ -910,7 +910,6 @@ window.player = {
       modLoader: {
         mode: "url",
         listUrl: "mods/mods.json",
-        cdnBaseUrl: "",
         zipUrl: "",
       },
     },

@@ -3,10 +3,10 @@ import { DEV } from "@/env";
 
 const MOD_API_VERSION = 1;
 const CONFIG_KEY = "admod:config";
+const CDN_LIST_URL = "mods/cdn.json";
 const DEFAULT_CONFIG = Object.freeze({
   mode: "url",
   listUrl: "mods/mods.json",
-  cdnBaseUrl: "",
   zipUrl: "",
 });
 
@@ -43,19 +43,13 @@ function withCacheBust(url) {
   return DEV ? `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}` : url;
 }
 
-function ensureTrailingSlash(url) {
-  if (!url) return url;
-  return url.endsWith("/") ? url : `${url}/`;
-}
-
 function resolveUrl(path, base) {
   return new URL(path, base).toString();
 }
 
-function resolveWithCdn(path, baseUrl, cdnBaseUrl) {
-  if (isAbsoluteUrl(path)) return path;
-  if (cdnBaseUrl) return resolveUrl(path, ensureTrailingSlash(cdnBaseUrl));
-  return resolveUrl(path, baseUrl);
+function ensureTrailingSlash(url) {
+  if (!url) return url;
+  return url.endsWith("/") ? url : `${url}/`;
 }
 
 async function fetchJson(url) {
@@ -77,7 +71,6 @@ function normalizeConfig(raw) {
   const next = { ...DEFAULT_CONFIG, ...(raw || {}) };
   next.mode = next.mode === "zip" ? "zip" : "url";
   next.listUrl = typeof next.listUrl === "string" && next.listUrl.trim() ? next.listUrl.trim() : DEFAULT_CONFIG.listUrl;
-  next.cdnBaseUrl = typeof next.cdnBaseUrl === "string" ? next.cdnBaseUrl.trim() : "";
   next.zipUrl = typeof next.zipUrl === "string" ? next.zipUrl.trim() : "";
   return next;
 }
@@ -373,25 +366,49 @@ export const ModManager = {
   },
 
   async _loadFromUrlConfig(config) {
-    const baseForList = config.cdnBaseUrl
-      ? ensureTrailingSlash(config.cdnBaseUrl)
-      : window.location.href;
-    const listUrl = resolveWithCdn(config.listUrl, baseForList, config.cdnBaseUrl);
+    const listUrl = resolveUrl(config.listUrl, window.location.href);
 
+    const seen = new Set();
+    await this._loadListFromUrl(listUrl, seen);
+
+    const cdnListUrl = resolveUrl(CDN_LIST_URL, window.location.href);
+    const cdnUrls = await this._loadCdnUrls(cdnListUrl);
+    for (const cdnUrl of cdnUrls) {
+      const normalized = cdnUrl.trim();
+      if (!normalized) continue;
+      const listFromCdn = normalized.endsWith(".json")
+        ? normalized
+        : resolveUrl("mods.json", ensureTrailingSlash(normalized));
+      await this._loadListFromUrl(listFromCdn, seen);
+    }
+  },
+
+  async _loadCdnUrls(listUrl) {
+    let data;
+    try {
+      data = await fetchJson(withCacheBust(listUrl));
+    } catch (error) {
+      return [];
+    }
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.cdns)) return data.cdns;
+    return [];
+  },
+
+  async _loadListFromUrl(listUrl, seen) {
     let modList;
     try {
       modList = await fetchJson(withCacheBust(listUrl));
     } catch (error) {
-      console.warn("[ModManager] No mod list found or failed to load.", error);
+      console.warn(`[ModManager] No mod list found or failed to load. (${listUrl})`, error);
       return;
     }
 
     if (!modList || !Array.isArray(modList.mods)) {
-      console.warn("[ModManager] Invalid mod list format.");
+      console.warn(`[ModManager] Invalid mod list format. (${listUrl})`);
       return;
     }
 
-    const seen = new Set();
     for (const entry of modList.mods) {
       if (!entry || entry.enabled === false) continue;
       const id = entry.id;
@@ -401,7 +418,7 @@ export const ModManager = {
         continue;
       }
       seen.add(id);
-      await this._loadSingleFromUrl(entry, listUrl, config.cdnBaseUrl);
+      await this._loadSingleFromUrl(entry, listUrl);
     }
   },
 
@@ -448,10 +465,9 @@ export const ModManager = {
     }
   },
 
-  async _loadSingleFromUrl(entry, listUrl, cdnBaseUrl) {
+  async _loadSingleFromUrl(entry, listUrl) {
     const manifestPath = entry.manifest || `mods/${entry.id}/manifest.json`;
-    const listBase = listUrl;
-    const manifestUrl = resolveWithCdn(manifestPath, listBase, cdnBaseUrl);
+    const manifestUrl = resolveUrl(manifestPath, listUrl);
 
     let manifest;
     try {
@@ -476,7 +492,7 @@ export const ModManager = {
     }
 
     const entryFile = manifest.entry || "main.js";
-    const entryUrl = resolveWithCdn(entryFile, manifestUrl, cdnBaseUrl);
+    const entryUrl = resolveUrl(entryFile, manifestUrl);
     const entryUrlWithCache = withCacheBust(entryUrl);
 
     let modModule;
