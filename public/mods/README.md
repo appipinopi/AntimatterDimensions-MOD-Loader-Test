@@ -4,7 +4,7 @@
 Edit `public/mods/mods.json` and add entries to the `mods` array in the order you want them loaded.
 
 ## CDN List
-If you want to load additional mods from external URLs, add them to `public/mods/cdn.json`.
+If you want to load additional mods from external URLs, add them to `public/mods/cors.json`.
 Each entry should be either:
 - A full URL to a `mods.json`
 - A base URL which contains a `mods.json` file

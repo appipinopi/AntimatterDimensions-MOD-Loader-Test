@@ -3,10 +3,12 @@ import { DEV } from "@/env";
 
 const MOD_API_VERSION = 1;
 const CONFIG_KEY = "admod:config";
-const CDN_LIST_URL = "mods/cdn.json";
+const CORS_LIST_URL = "mods/cors.json";
+const ZIP_STORAGE_DB = "admod";
+const ZIP_STORAGE_STORE = "zip-mods";
+const ZIP_STORAGE_KEY = "last";
 const DEFAULT_CONFIG = Object.freeze({
   mode: "url",
-  listUrl: "mods/mods.json",
   zipUrl: "",
   disabledMods: [],
 });
@@ -71,12 +73,71 @@ function resolveRegister(modModule) {
 function normalizeConfig(raw) {
   const next = { ...DEFAULT_CONFIG, ...(raw || {}) };
   next.mode = next.mode === "zip" ? "zip" : "url";
-  next.listUrl = typeof next.listUrl === "string" && next.listUrl.trim() ? next.listUrl.trim() : DEFAULT_CONFIG.listUrl;
   next.zipUrl = typeof next.zipUrl === "string" ? next.zipUrl.trim() : "";
   next.disabledMods = Array.isArray(next.disabledMods)
     ? next.disabledMods.filter(id => typeof id === "string" && id.trim()).map(id => id.trim())
     : [];
+  if ("listUrl" in next) delete next.listUrl;
   return next;
+}
+
+function openZipStorage() {
+  if (typeof indexedDB === "undefined") {
+    return Promise.reject(new Error("indexedDB is not available"));
+  }
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(ZIP_STORAGE_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(ZIP_STORAGE_STORE)) {
+        db.createObjectStore(ZIP_STORAGE_STORE);
+      }
+    };
+    request.onerror = () => reject(request.error || new Error("Failed to open zip storage"));
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+
+async function loadStoredZipEntry() {
+  const db = await openZipStorage();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(ZIP_STORAGE_STORE, "readonly");
+    const store = tx.objectStore(ZIP_STORAGE_STORE);
+    const request = store.get(ZIP_STORAGE_KEY);
+    tx.oncomplete = () => {
+      db.close();
+      resolve(request.result || null);
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error || new Error("Failed to read zip storage"));
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error("Zip storage transaction aborted"));
+    };
+  });
+}
+
+async function saveStoredZipEntry(entry) {
+  const db = await openZipStorage();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(ZIP_STORAGE_STORE, "readwrite");
+    const store = tx.objectStore(ZIP_STORAGE_STORE);
+    store.put(entry, ZIP_STORAGE_KEY);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error || new Error("Failed to write zip storage"));
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error("Zip storage transaction aborted"));
+    };
+  });
 }
 
 function createModApi(modMeta) {
@@ -329,13 +390,18 @@ export const ModManager = {
     const buffer = await file.arrayBuffer();
     const source = await ZipSource.fromArrayBuffer(buffer);
     this._setZipSource(source);
+    await this._storeZipLocally(file, file.name || "local.zip");
     await this.reload();
   },
 
   async loadZipUrl(url) {
     if (!url) return;
-    const source = await ZipSource.fromUrl(url);
+    const response = await fetch(withCacheBust(url), { cache: DEV ? "no-store" : "default" });
+    if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+    const buffer = await response.arrayBuffer();
+    const source = await ZipSource.fromArrayBuffer(buffer);
     this._setZipSource(source);
+    await this._storeZipLocally(new Blob([buffer]), url);
     await this.reload();
   },
 
@@ -392,24 +458,20 @@ export const ModManager = {
   },
 
   async _loadFromUrlConfig(config) {
-    const listUrl = resolveUrl(config.listUrl, window.location.href);
-
     const seen = new Set();
-    await this._loadListFromUrl(listUrl, seen);
-
-    const cdnListUrl = resolveUrl(CDN_LIST_URL, window.location.href);
-    const cdnUrls = await this._loadCdnUrls(cdnListUrl);
-    for (const cdnUrl of cdnUrls) {
-      const normalized = cdnUrl.trim();
+    const corsListUrl = resolveUrl(CORS_LIST_URL, window.location.href);
+    const corsUrls = await this._loadCorsUrls(corsListUrl);
+    for (const corsUrl of corsUrls) {
+      const normalized = corsUrl.trim();
       if (!normalized) continue;
-      const listFromCdn = normalized.endsWith(".json")
+      const listFromCors = normalized.endsWith(".json")
         ? normalized
         : resolveUrl("mods.json", ensureTrailingSlash(normalized));
-      await this._loadListFromUrl(listFromCdn, seen);
+      await this._loadListFromUrl(listFromCors, seen);
     }
   },
 
-  async _loadCdnUrls(listUrl) {
+  async _loadCorsUrls(listUrl) {
     let data;
     try {
       data = await fetchJson(withCacheBust(listUrl));
@@ -417,6 +479,7 @@ export const ModManager = {
       return [];
     }
     if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.cors)) return data.cors;
     if (data && Array.isArray(data.cdns)) return data.cdns;
     return [];
   },
@@ -457,14 +520,19 @@ export const ModManager = {
         source = await ZipSource.fromUrl(withCacheBust(config.zipUrl));
       } catch (error) {
         console.warn("[ModManager] Failed to load zip from URL.", error);
-        return;
       }
+    }
+
+    if (!source) {
+      source = await this._loadStoredZipSource();
     }
 
     if (!source) {
       console.warn("[ModManager] ZIP mode enabled but no zip source is available.");
       return;
     }
+
+    this._setZipSource(source);
 
     let modList;
     try {
@@ -641,6 +709,30 @@ export const ModManager = {
     info.version = modMeta.version || info.version || "";
     info.description = modMeta.description || info.description || "";
     this.availableMods.set(modMeta.id, info);
+  },
+
+  async _storeZipLocally(blob, name) {
+    try {
+      await saveStoredZipEntry({
+        blob,
+        name,
+        updatedAt: Date.now(),
+      });
+    } catch (error) {
+      console.warn("[ModManager] Failed to store zip locally.", error);
+    }
+  },
+
+  async _loadStoredZipSource() {
+    try {
+      const entry = await loadStoredZipEntry();
+      if (!entry?.blob) return null;
+      const buffer = await entry.blob.arrayBuffer();
+      return ZipSource.fromArrayBuffer(buffer);
+    } catch (error) {
+      console.warn("[ModManager] Failed to load stored zip.", error);
+      return null;
+    }
   },
 };
 

@@ -6,7 +6,6 @@ export default {
   data() {
     return {
       modSourceIsUrl: true,
-      modListUrl: "",
       modZipUrl: "",
       modZipFileName: "",
       modZipFile: null,
@@ -19,7 +18,6 @@ export default {
     update() {
       const modConfig = ModManager.getConfig();
       this.modSourceIsUrl = modConfig.mode !== "zip";
-      this.modListUrl = modConfig.listUrl;
       this.modZipUrl = modConfig.zipUrl;
       this.loadedMods = ModManager.mods.slice();
       this.modErrors = ModManager.errors.slice();
@@ -27,19 +25,15 @@ export default {
     },
     setSource(mode) {
       this.modSourceIsUrl = mode === "url";
-      this.applyModConfig({ mode: this.modSourceIsUrl ? "url" : "zip" });
+      this.applyModConfig({
+        mode: this.modSourceIsUrl ? "url" : "zip"
+      });
     },
     applyModConfig(partial) {
       const next = ModManager.setConfig(partial);
       if (!player.options.modLoader) player.options.modLoader = {};
       player.options.modLoader.mode = next.mode;
-      player.options.modLoader.listUrl = next.listUrl;
       player.options.modLoader.zipUrl = next.zipUrl;
-    },
-    handleModListUrlChange(event) {
-      const value = event.target.value.trim();
-      this.modListUrl = value;
-      this.applyModConfig({ listUrl: value });
     },
     handleModZipUrlChange(event) {
       const value = event.target.value.trim();
@@ -120,18 +114,7 @@ export default {
       </div>
     </div>
 
-    <div v-if="modSourceIsUrl" class="mod-classic__card">
-      <div class="mod-classic__label">Mod list URL</div>
-      <input
-        class="mod-classic__input"
-        type="text"
-        placeholder="mods/mods.json or https://..."
-        :value="modListUrl"
-        @change="handleModListUrlChange"
-      >
-    </div>
-
-    <div v-else class="mod-classic__card">
+    <div v-if="!modSourceIsUrl" class="mod-classic__card">
       <div class="mod-classic__label">ZIP URL</div>
       <input
         class="mod-classic__input"

@@ -909,7 +909,6 @@ window.player = {
       autoRealityForFilter: false,
       modLoader: {
         mode: "url",
-        listUrl: "mods/mods.json",
         zipUrl: "",
         disabledMods: [],
       },
