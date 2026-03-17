@@ -905,9 +905,15 @@ window.player = {
       clearOnReality: true,
       clearOnRestart: true,
     },
-    invertTTgenDisplay: false,
-    autoRealityForFilter: false,
-  },
+      invertTTgenDisplay: false,
+      autoRealityForFilter: false,
+      modLoader: {
+        mode: "url",
+        listUrl: "mods/mods.json",
+        cdnBaseUrl: "",
+        zipUrl: "",
+      },
+    },
   IAP: {
     enabled: false,
     checkoutSession: {

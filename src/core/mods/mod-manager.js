@@ -1,7 +1,14 @@
+﻿import JSZip from "jszip";
 import { DEV } from "@/env";
 
-const MOD_LIST_URL = "mods/mods.json";
 const MOD_API_VERSION = 1;
+const CONFIG_KEY = "admod:config";
+const DEFAULT_CONFIG = Object.freeze({
+  mode: "url",
+  listUrl: "mods/mods.json",
+  cdnBaseUrl: "",
+  zipUrl: "",
+});
 
 const HOOKS = {
   PRE_INIT: "preInit",
@@ -28,6 +35,29 @@ function safeCall(handler, mod, hook, args) {
   }
 }
 
+function isAbsoluteUrl(value) {
+  return /^[a-z][a-z0-9+.-]*:/iu.test(value);
+}
+
+function withCacheBust(url) {
+  return DEV ? `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}` : url;
+}
+
+function ensureTrailingSlash(url) {
+  if (!url) return url;
+  return url.endsWith("/") ? url : `${url}/`;
+}
+
+function resolveUrl(path, base) {
+  return new URL(path, base).toString();
+}
+
+function resolveWithCdn(path, baseUrl, cdnBaseUrl) {
+  if (isAbsoluteUrl(path)) return path;
+  if (cdnBaseUrl) return resolveUrl(path, ensureTrailingSlash(cdnBaseUrl));
+  return resolveUrl(path, baseUrl);
+}
+
 async function fetchJson(url) {
   const response = await fetch(url, { cache: DEV ? "no-store" : "default" });
   if (!response.ok) {
@@ -41,6 +71,15 @@ function resolveRegister(modModule) {
   if (typeof modModule?.register === "function") return modModule.register;
   if (typeof modModule?.default?.register === "function") return modModule.default.register;
   return null;
+}
+
+function normalizeConfig(raw) {
+  const next = { ...DEFAULT_CONFIG, ...(raw || {}) };
+  next.mode = next.mode === "zip" ? "zip" : "url";
+  next.listUrl = typeof next.listUrl === "string" && next.listUrl.trim() ? next.listUrl.trim() : DEFAULT_CONFIG.listUrl;
+  next.cdnBaseUrl = typeof next.cdnBaseUrl === "string" ? next.cdnBaseUrl.trim() : "";
+  next.zipUrl = typeof next.zipUrl === "string" ? next.zipUrl.trim() : "";
+  return next;
 }
 
 function createModApi(modMeta) {
@@ -125,6 +164,81 @@ function createModApi(modMeta) {
   });
 }
 
+function stripLeadingSlash(value) {
+  return value.replace(/^[\\/]+/gu, "");
+}
+
+function normalizeZipPath(value) {
+  return stripLeadingSlash(value.replace(/\\/gu, "/"));
+}
+
+function zipDirname(path) {
+  const normalized = normalizeZipPath(path);
+  const index = normalized.lastIndexOf("/");
+  if (index === -1) return "";
+  return normalized.slice(0, index + 1);
+}
+
+function resolveZipPath(basePath, relPath) {
+  if (isAbsoluteUrl(relPath)) return relPath;
+  const rel = normalizeZipPath(relPath);
+  if (relPath.startsWith("/")) return rel;
+  const baseDir = zipDirname(basePath);
+  return normalizeZipPath(`${baseDir}${rel}`);
+}
+
+class ZipSource {
+  constructor(zip) {
+    this.zip = zip;
+    this.blobUrls = new Map();
+  }
+
+  static async fromArrayBuffer(buffer) {
+    const zip = await JSZip.loadAsync(buffer);
+    return new ZipSource(zip);
+  }
+
+  static async fromUrl(url) {
+    const response = await fetch(url, { cache: DEV ? "no-store" : "default" });
+    if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+    const buffer = await response.arrayBuffer();
+    return ZipSource.fromArrayBuffer(buffer);
+  }
+
+  getFile(path) {
+    const normalized = normalizeZipPath(path);
+    const file = this.zip.file(normalized);
+    if (!file) throw new Error(`Missing file in zip: ${normalized}`);
+    return file;
+  }
+
+  async getText(path) {
+    return this.getFile(path).async("text");
+  }
+
+  async getJson(path) {
+    const text = await this.getText(path);
+    return JSON.parse(text);
+  }
+
+  async getBlobUrl(path, mime = "text/javascript") {
+    const normalized = normalizeZipPath(path);
+    if (this.blobUrls.has(normalized)) return this.blobUrls.get(normalized);
+    const data = await this.getFile(normalized).async("uint8array");
+    const blob = new Blob([data], { type: mime });
+    const url = URL.createObjectURL(blob);
+    this.blobUrls.set(normalized, url);
+    return url;
+  }
+
+  revokeAll() {
+    for (const url of this.blobUrls.values()) {
+      URL.revokeObjectURL(url);
+    }
+    this.blobUrls.clear();
+  }
+}
+
 export const ModManager = {
   apiVersion: MOD_API_VERSION,
   loaded: false,
@@ -138,6 +252,70 @@ export const ModManager = {
     [HOOKS.UI_UPDATE]: [],
   },
   _eventBridgeInstalled: false,
+  _zipSource: null,
+
+  getConfig() {
+    try {
+      const raw = localStorage.getItem(CONFIG_KEY);
+      return normalizeConfig(raw ? JSON.parse(raw) : undefined);
+    } catch (error) {
+      console.warn("[ModManager] Failed to read config.", error);
+      return { ...DEFAULT_CONFIG };
+    }
+  },
+
+  setConfig(partial) {
+    const next = normalizeConfig({ ...this.getConfig(), ...(partial || {}) });
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(next));
+    return next;
+  },
+
+  resetHooks() {
+    this._hooks = {
+      [HOOKS.PRE_INIT]: [],
+      [HOOKS.POST_INIT]: [],
+      [HOOKS.GAME_LOAD]: [],
+      [HOOKS.TICK]: [],
+      [HOOKS.UI_UPDATE]: [],
+    };
+  },
+
+  unload() {
+    for (const mod of this.mods) {
+      if (mod.api?.events) mod.api.events.offAll();
+    }
+    this.mods = [];
+    this.errors = [];
+    this.resetHooks();
+  },
+
+  async reload() {
+    this.unload();
+    this.loaded = false;
+    await this.load();
+  },
+
+  async loadZipFile(file) {
+    if (!file) return;
+    const buffer = await file.arrayBuffer();
+    const source = await ZipSource.fromArrayBuffer(buffer);
+    this._setZipSource(source);
+    await this.reload();
+  },
+
+  async loadZipUrl(url) {
+    if (!url) return;
+    const source = await ZipSource.fromUrl(url);
+    this._setZipSource(source);
+    await this.reload();
+  },
+
+  _setZipSource(source) {
+    if (this._zipSource && this._zipSource !== source) {
+      this._zipSource.revokeAll();
+    }
+    this._zipSource = source;
+  },
 
   registerHook(type, handler, modMeta, logger) {
     if (typeof handler !== "function") {
@@ -171,19 +349,34 @@ export const ModManager = {
   async load() {
     if (this.loaded) return;
     this._installEventBridge();
+
+    const config = this.getConfig();
+    if (config.mode === "zip") {
+      await this._loadFromZipConfig(config);
+      this.loaded = true;
+      return;
+    }
+
+    await this._loadFromUrlConfig(config);
+    this.loaded = true;
+  },
+
+  async _loadFromUrlConfig(config) {
+    const baseForList = config.cdnBaseUrl
+      ? ensureTrailingSlash(config.cdnBaseUrl)
+      : window.location.href;
+    const listUrl = resolveWithCdn(config.listUrl, baseForList, config.cdnBaseUrl);
+
     let modList;
     try {
-      const listUrl = DEV ? `${MOD_LIST_URL}?t=${Date.now()}` : MOD_LIST_URL;
-      modList = await fetchJson(listUrl);
+      modList = await fetchJson(withCacheBust(listUrl));
     } catch (error) {
       console.warn("[ModManager] No mod list found or failed to load.", error);
-      this.loaded = true;
       return;
     }
 
     if (!modList || !Array.isArray(modList.mods)) {
       console.warn("[ModManager] Invalid mod list format.");
-      this.loaded = true;
       return;
     }
 
@@ -197,17 +390,61 @@ export const ModManager = {
         continue;
       }
       seen.add(id);
-      await this._loadSingle(entry);
+      await this._loadSingleFromUrl(entry, listUrl, config.cdnBaseUrl);
     }
-    this.loaded = true;
   },
 
-  async _loadSingle(entry) {
-    const manifestUrl = entry.manifest || `mods/${entry.id}/manifest.json`;
+  async _loadFromZipConfig(config) {
+    let source = this._zipSource;
+    if (!source && config.zipUrl) {
+      try {
+        source = await ZipSource.fromUrl(withCacheBust(config.zipUrl));
+      } catch (error) {
+        console.warn("[ModManager] Failed to load zip from URL.", error);
+        return;
+      }
+    }
+
+    if (!source) {
+      console.warn("[ModManager] ZIP mode enabled but no zip source is available.");
+      return;
+    }
+
+    let modList;
+    try {
+      modList = await source.getJson("mods.json");
+    } catch (error) {
+      console.warn("[ModManager] Failed to read mods.json from zip.", error);
+      return;
+    }
+
+    if (!modList || !Array.isArray(modList.mods)) {
+      console.warn("[ModManager] Invalid mod list format in zip.");
+      return;
+    }
+
+    const seen = new Set();
+    for (const entry of modList.mods) {
+      if (!entry || entry.enabled === false) continue;
+      const id = entry.id;
+      if (!id || typeof id !== "string") continue;
+      if (seen.has(id)) {
+        console.warn(`[ModManager] Duplicate mod id skipped: ${id}`);
+        continue;
+      }
+      seen.add(id);
+      await this._loadSingleFromZip(entry, source);
+    }
+  },
+
+  async _loadSingleFromUrl(entry, listUrl, cdnBaseUrl) {
+    const manifestPath = entry.manifest || `mods/${entry.id}/manifest.json`;
+    const listBase = listUrl;
+    const manifestUrl = resolveWithCdn(manifestPath, listBase, cdnBaseUrl);
+
     let manifest;
     try {
-      const url = DEV ? `${manifestUrl}?t=${Date.now()}` : manifestUrl;
-      manifest = await fetchJson(url);
+      manifest = await fetchJson(withCacheBust(manifestUrl));
     } catch (error) {
       console.warn(`[ModManager] Failed to load manifest for ${entry.id}.`, error);
       this.errors.push({ id: entry.id, error });
@@ -228,9 +465,64 @@ export const ModManager = {
     }
 
     const entryFile = manifest.entry || "main.js";
-    const entryUrl = DEV
-      ? `${new URL(entryFile, manifestUrl).toString()}?t=${Date.now()}`
-      : new URL(entryFile, manifestUrl).toString();
+    const entryUrl = resolveWithCdn(entryFile, manifestUrl, cdnBaseUrl);
+    const entryUrlWithCache = withCacheBust(entryUrl);
+
+    let modModule;
+    try {
+      modModule = await import(/* webpackIgnore: true */ entryUrlWithCache);
+    } catch (error) {
+      logger.error("Failed to import mod entry.", error);
+      this.errors.push({ id: modMeta.id, error });
+      return;
+    }
+
+    const register = resolveRegister(modModule);
+    if (!register) {
+      logger.warn("No register() function found in mod entry.");
+      return;
+    }
+
+    const api = createModApi(modMeta);
+    try {
+      await Promise.resolve(register(api));
+      this.mods.push({ ...modMeta, api, entryUrl: entryUrlWithCache, manifest });
+      logger.info("Loaded");
+    } catch (error) {
+      logger.error("Mod registration failed.", error);
+      this.errors.push({ id: modMeta.id, error });
+    }
+  },
+
+  async _loadSingleFromZip(entry, source) {
+    const manifestPath = normalizeZipPath(entry.manifest || `mods/${entry.id}/manifest.json`);
+    let manifest;
+    try {
+      manifest = await source.getJson(manifestPath);
+    } catch (error) {
+      console.warn(`[ModManager] Failed to load manifest for ${entry.id} from zip.`, error);
+      this.errors.push({ id: entry.id, error });
+      return;
+    }
+
+    const modMeta = {
+      id: manifest.id || entry.id,
+      name: manifest.name || entry.id,
+      version: manifest.version || "0.0.0",
+      description: manifest.description || "",
+      manifestUrl: manifestPath,
+    };
+    const logger = createLogger(modMeta.id, modMeta.name);
+
+    if (manifest.apiVersion !== undefined && manifest.apiVersion !== MOD_API_VERSION) {
+      logger.warn(`API version mismatch. Mod=${manifest.apiVersion} Loader=${MOD_API_VERSION}`);
+    }
+
+    const entryFile = manifest.entry || "main.js";
+    const entryPath = resolveZipPath(manifestPath, entryFile);
+    const entryUrl = isAbsoluteUrl(entryPath)
+      ? entryPath
+      : await source.getBlobUrl(entryPath);
 
     let modModule;
     try {
