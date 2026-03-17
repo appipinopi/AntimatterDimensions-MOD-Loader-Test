@@ -911,6 +911,7 @@ window.player = {
         mode: "url",
         listUrl: "mods/mods.json",
         zipUrl: "",
+        disabledMods: [],
       },
     },
   IAP: {

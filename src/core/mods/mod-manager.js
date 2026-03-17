@@ -8,6 +8,7 @@ const DEFAULT_CONFIG = Object.freeze({
   mode: "url",
   listUrl: "mods/mods.json",
   zipUrl: "",
+  disabledMods: [],
 });
 
 const HOOKS = {
@@ -72,6 +73,9 @@ function normalizeConfig(raw) {
   next.mode = next.mode === "zip" ? "zip" : "url";
   next.listUrl = typeof next.listUrl === "string" && next.listUrl.trim() ? next.listUrl.trim() : DEFAULT_CONFIG.listUrl;
   next.zipUrl = typeof next.zipUrl === "string" ? next.zipUrl.trim() : "";
+  next.disabledMods = Array.isArray(next.disabledMods)
+    ? next.disabledMods.filter(id => typeof id === "string" && id.trim()).map(id => id.trim())
+    : [];
   return next;
 }
 
@@ -247,6 +251,7 @@ export const ModManager = {
   },
   _eventBridgeInstalled: false,
   _zipSource: null,
+  availableMods: new Map(),
 
   setGameSpeedMultiplier(value) {
     const next = Number(value);
@@ -272,6 +277,26 @@ export const ModManager = {
     const next = normalizeConfig({ ...this.getConfig(), ...(partial || {}) });
     localStorage.setItem(CONFIG_KEY, JSON.stringify(next));
     return next;
+  },
+
+  isModDisabled(id) {
+    return this.getConfig().disabledMods.includes(id);
+  },
+
+  setModDisabled(id, disabled) {
+    const config = this.getConfig();
+    const set = new Set(config.disabledMods || []);
+    if (disabled) set.add(id);
+    else set.delete(id);
+    return this.setConfig({ disabledMods: Array.from(set) });
+  },
+
+  getAvailableMods() {
+    return Array.from(this.availableMods.values()).map(info => ({
+      ...info,
+      sources: Array.from(info.sources || []),
+      enabled: !this.isModDisabled(info.id),
+    }));
   },
 
   resetHooks() {
@@ -353,6 +378,7 @@ export const ModManager = {
   async load() {
     if (this.loaded) return;
     this._installEventBridge();
+    this.availableMods = new Map();
 
     const config = this.getConfig();
     if (config.mode === "zip") {
@@ -413,11 +439,13 @@ export const ModManager = {
       if (!entry || entry.enabled === false) continue;
       const id = entry.id;
       if (!id || typeof id !== "string") continue;
+      this._registerAvailableEntry(entry, listUrl);
       if (seen.has(id)) {
         console.warn(`[ModManager] Duplicate mod id skipped: ${id}`);
         continue;
       }
       seen.add(id);
+      if (this.isModDisabled(id)) continue;
       await this._loadSingleFromUrl(entry, listUrl);
     }
   },
@@ -456,11 +484,13 @@ export const ModManager = {
       if (!entry || entry.enabled === false) continue;
       const id = entry.id;
       if (!id || typeof id !== "string") continue;
+      this._registerAvailableEntry(entry, "zip://mods.json");
       if (seen.has(id)) {
         console.warn(`[ModManager] Duplicate mod id skipped: ${id}`);
         continue;
       }
       seen.add(id);
+      if (this.isModDisabled(id)) continue;
       await this._loadSingleFromZip(entry, source);
     }
   },
@@ -485,6 +515,7 @@ export const ModManager = {
       description: manifest.description || "",
       manifestUrl,
     };
+    this._updateAvailableMeta(modMeta);
     const logger = createLogger(modMeta.id, modMeta.name);
 
     if (manifest.apiVersion !== undefined && manifest.apiVersion !== MOD_API_VERSION) {
@@ -539,6 +570,7 @@ export const ModManager = {
       description: manifest.description || "",
       manifestUrl: manifestPath,
     };
+    this._updateAvailableMeta(modMeta);
     const logger = createLogger(modMeta.id, modMeta.name);
 
     if (manifest.apiVersion !== undefined && manifest.apiVersion !== MOD_API_VERSION) {
@@ -575,6 +607,40 @@ export const ModManager = {
       logger.error("Mod registration failed.", error);
       this.errors.push({ id: modMeta.id, error });
     }
+  },
+
+  _registerAvailableEntry(entry, listUrl) {
+    if (!entry?.id) return;
+    const id = entry.id;
+    let info = this.availableMods.get(id);
+    if (!info) {
+      info = {
+        id,
+        name: id,
+        version: "",
+        description: "",
+        sources: new Set(),
+        manifest: entry.manifest || "",
+      };
+    }
+    info.sources.add(listUrl);
+    if (entry.manifest) info.manifest = entry.manifest;
+    this.availableMods.set(id, info);
+  },
+
+  _updateAvailableMeta(modMeta) {
+    if (!modMeta?.id) return;
+    let info = this.availableMods.get(modMeta.id);
+    if (!info) {
+      info = {
+        id: modMeta.id,
+        sources: new Set(),
+      };
+    }
+    info.name = modMeta.name || info.name || modMeta.id;
+    info.version = modMeta.version || info.version || "";
+    info.description = modMeta.description || info.description || "";
+    this.availableMods.set(modMeta.id, info);
   },
 };
 

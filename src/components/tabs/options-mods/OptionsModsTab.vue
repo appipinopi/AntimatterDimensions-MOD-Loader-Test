@@ -16,6 +16,9 @@ export default {
       modZipUrl: "",
       modZipFileName: "",
       modZipFile: null,
+      loadedMods: [],
+      modErrors: [],
+      availableMods: [],
     };
   },
   watch: {
@@ -30,6 +33,9 @@ export default {
       this.modSourceIsUrl = modConfig.mode !== "zip";
       this.modListUrl = modConfig.listUrl;
       this.modZipUrl = modConfig.zipUrl;
+      this.loadedMods = ModManager.mods.slice();
+      this.modErrors = ModManager.errors.slice();
+      this.availableMods = ModManager.getAvailableMods();
     },
     applyModConfig(partial) {
       const next = ModManager.setConfig(partial);
@@ -51,6 +57,9 @@ export default {
     async reloadMods() {
       await ModManager.reload();
       if (GameUI?.notify?.info) GameUI.notify.info("Mods reloaded");
+      this.loadedMods = ModManager.mods.slice();
+      this.modErrors = ModManager.errors.slice();
+      this.availableMods = ModManager.getAvailableMods();
     },
     onZipFileSelected(event) {
       if (!event.target.files || event.target.files.length === 0) return;
@@ -61,6 +70,16 @@ export default {
       if (!this.modZipFile) return;
       await ModManager.loadZipFile(this.modZipFile);
       if (GameUI?.notify?.info) GameUI.notify.info("ZIP mod loaded");
+      this.availableMods = ModManager.getAvailableMods();
+    },
+    isModEnabled(id) {
+      return !ModManager.isModDisabled(id);
+    },
+    async setModEnabled(id, enabled) {
+      const next = ModManager.setModDisabled(id, !enabled);
+      if (!player.options.modLoader) player.options.modLoader = {};
+      player.options.modLoader.disabledMods = next.disabledMods;
+      await this.reloadMods();
     }
   }
 };
@@ -129,6 +148,86 @@ export default {
           Load ZIP {{ modZipFileName ? `(${modZipFileName})` : "" }}
         </OptionsButton>
       </div>
+      <div class="l-options-grid__row">
+        <div class="o-primary-btn o-primary-btn--option l-options-grid__button c-mod-loader-list">
+          <b>Loaded Mods ({{ loadedMods.length }})</b>
+          <div v-if="loadedMods.length === 0" class="c-mod-loader-list__empty">
+            No mods loaded
+          </div>
+          <div v-else class="c-mod-loader-list__items">
+            <div
+              v-for="mod in loadedMods"
+              :key="mod.id"
+              class="c-mod-loader-list__item"
+            >
+              <div class="c-mod-loader-list__title">
+                {{ mod.name }} ({{ mod.version }})
+              </div>
+              <div v-if="mod.description" class="c-mod-loader-list__desc">
+                {{ mod.description }}
+              </div>
+              <div class="c-mod-loader-list__meta">
+                id: {{ mod.id }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div
+          v-if="modErrors.length > 0"
+          class="o-primary-btn o-primary-btn--option l-options-grid__button c-mod-loader-list"
+        >
+          <b>Mod Errors ({{ modErrors.length }})</b>
+          <div class="c-mod-loader-list__items">
+            <div
+              v-for="(err, index) in modErrors"
+              :key="`${err.id || 'unknown'}-${index}`"
+              class="c-mod-loader-list__item"
+            >
+              <div class="c-mod-loader-list__title">
+                {{ err.id || "unknown" }}
+              </div>
+              <div class="c-mod-loader-list__desc">
+                {{ err.error?.message || "Unknown error" }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="l-options-grid__row">
+        <div class="o-primary-btn o-primary-btn--option l-options-grid__button c-mod-loader-list">
+          <b>Available Mods ({{ availableMods.length }})</b>
+          <div v-if="availableMods.length === 0" class="c-mod-loader-list__empty">
+            No mods found
+          </div>
+          <div v-else class="c-mod-loader-list__items">
+            <div
+              v-for="mod in availableMods"
+              :key="`available-${mod.id}`"
+              class="c-mod-loader-list__item c-mod-loader-list__item--row"
+            >
+              <div class="c-mod-loader-list__info">
+                <div class="c-mod-loader-list__title">
+                  {{ mod.name || mod.id }} <span v-if="mod.version">({{ mod.version }})</span>
+                </div>
+                <div v-if="mod.description" class="c-mod-loader-list__desc">
+                  {{ mod.description }}
+                </div>
+                <div class="c-mod-loader-list__meta">
+                  id: {{ mod.id }}
+                </div>
+              </div>
+              <PrimaryToggleButton
+                :value="isModEnabled(mod.id)"
+                class="o-primary-btn--option l-options-grid__button"
+                label="Enabled:"
+                on="ON"
+                off="OFF"
+                @input="setModEnabled(mod.id, $event)"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -151,5 +250,61 @@ export default {
   font-weight: bold;
   border: 0.1rem solid black;
   border-radius: var(--var-border-radius, 0.3rem);
+}
+
+.c-mod-loader-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  text-align: left;
+  max-height: 40rem;
+  overflow: auto;
+}
+
+.c-mod-loader-list__items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.c-mod-loader-list__item {
+  padding: 0.4rem 0.2rem;
+  border-bottom: 0.1rem solid rgba(0, 0, 0, 0.2);
+}
+
+.c-mod-loader-list__item:last-child {
+  border-bottom: none;
+}
+
+.c-mod-loader-list__title {
+  font-weight: bold;
+}
+
+.c-mod-loader-list__desc {
+  font-size: 1.2rem;
+  opacity: 0.85;
+}
+
+.c-mod-loader-list__meta {
+  font-size: 1.1rem;
+  opacity: 0.7;
+}
+
+.c-mod-loader-list__empty {
+  font-size: 1.2rem;
+  opacity: 0.7;
+}
+
+.c-mod-loader-list__item--row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.c-mod-loader-list__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 </style>
