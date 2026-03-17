@@ -88,25 +88,25 @@ export default {
 </script>
 
 <template>
-  <div class="mod-modern">
-    <div class="mod-modern__header">
-      <div class="mod-modern__title">MOD MENU</div>
-      <div class="mod-modern__subtitle">Manage sources, load order, and enable states</div>
+  <div class="mod-classic">
+    <div class="mod-classic__header">
+      <div class="mod-classic__title">MOD MENU</div>
+      <div class="mod-classic__subtitle">Manage sources, load order, and enable states</div>
     </div>
 
-    <div class="mod-modern__row">
-      <div class="mod-modern__card mod-modern__card--tight">
-        <div class="mod-modern__label">Source</div>
-        <div class="mod-modern__toggle">
+    <div class="mod-classic__row">
+      <div class="mod-classic__card mod-classic__card--tight">
+        <div class="mod-classic__label">Source</div>
+        <div class="mod-classic__toggle">
           <button
-            class="mod-modern__pill"
+            class="mod-classic__btn mod-classic__btn--toggle"
             :class="{ 'is-active': modSourceIsUrl }"
             @click="setSource('url')"
           >
             URL
           </button>
           <button
-            class="mod-modern__pill"
+            class="mod-classic__btn mod-classic__btn--toggle"
             :class="{ 'is-active': !modSourceIsUrl }"
             @click="setSource('zip')"
           >
@@ -114,16 +114,16 @@ export default {
           </button>
         </div>
       </div>
-      <div class="mod-modern__card mod-modern__card--tight">
-        <div class="mod-modern__label">Actions</div>
-        <button class="mod-modern__btn" @click="reloadMods">Reload Mods</button>
+      <div class="mod-classic__card mod-classic__card--tight">
+        <div class="mod-classic__label">Actions</div>
+        <button class="mod-classic__btn" @click="reloadMods">Reload Mods</button>
       </div>
     </div>
 
-    <div v-if="modSourceIsUrl" class="mod-modern__card">
-      <div class="mod-modern__label">Mod list URL</div>
+    <div v-if="modSourceIsUrl" class="mod-classic__card">
+      <div class="mod-classic__label">Mod list URL</div>
       <input
-        class="mod-modern__input"
+        class="mod-classic__input"
         type="text"
         placeholder="mods/mods.json or https://..."
         :value="modListUrl"
@@ -131,70 +131,70 @@ export default {
       >
     </div>
 
-    <div v-else class="mod-modern__card">
-      <div class="mod-modern__label">ZIP URL</div>
+    <div v-else class="mod-classic__card">
+      <div class="mod-classic__label">ZIP URL</div>
       <input
-        class="mod-modern__input"
+        class="mod-classic__input"
         type="text"
         placeholder="https://example.com/mods.zip"
         :value="modZipUrl"
         @change="handleModZipUrlChange"
       >
-      <div class="mod-modern__zip-row">
-        <label class="mod-modern__file">
+      <div class="mod-classic__zip-row">
+        <label class="mod-classic__file">
           <input
-            class="mod-modern__file-input"
+            class="mod-classic__file-input"
             type="file"
             accept=".zip"
             @change="onZipFileSelected"
           >
           <span>Choose ZIP</span>
         </label>
-        <button class="mod-modern__btn mod-modern__btn--ghost" @click="loadZipFile">
+        <button class="mod-classic__btn mod-classic__btn--ghost" @click="loadZipFile">
           Load ZIP {{ modZipFileName ? "(" + modZipFileName + ")" : "" }}
         </button>
       </div>
     </div>
 
-    <div class="mod-modern__row">
-      <div class="mod-modern__card">
-        <div class="mod-modern__card-title">Loaded Mods ({{ loadedMods.length }})</div>
-        <div v-if="loadedMods.length === 0" class="mod-modern__empty">No mods loaded</div>
-        <div v-else class="mod-modern__list">
-          <div v-for="mod in loadedMods" :key="mod.id" class="mod-modern__item">
-            <div class="mod-modern__item-title">
+    <div class="mod-classic__row">
+      <div class="mod-classic__card">
+        <div class="mod-classic__card-title">Loaded Mods ({{ loadedMods.length }})</div>
+        <div v-if="loadedMods.length === 0" class="mod-classic__empty">No mods loaded</div>
+        <div v-else class="mod-classic__list">
+          <div v-for="mod in loadedMods" :key="mod.id" class="mod-classic__item">
+            <div class="mod-classic__item-title">
               {{ mod.name }} <span v-if="mod.version">({{ mod.version }})</span>
             </div>
-            <div v-if="mod.description" class="mod-modern__item-desc">{{ mod.description }}</div>
-            <div class="mod-modern__item-meta">id: {{ mod.id }}</div>
+            <div v-if="mod.description" class="mod-classic__item-desc">{{ mod.description }}</div>
+            <div class="mod-classic__item-meta">id: {{ mod.id }}</div>
           </div>
         </div>
       </div>
-      <div v-if="modErrors.length > 0" class="mod-modern__card">
-        <div class="mod-modern__card-title mod-modern__card-title--warn">Mod Errors ({{ modErrors.length }})</div>
-        <div class="mod-modern__list">
-          <div v-for="(err, index) in modErrors" :key="`err-${err.id || 'unknown'}-${index}`" class="mod-modern__item">
-            <div class="mod-modern__item-title mod-modern__item-title--warn">{{ err.id || "unknown" }}</div>
-            <div class="mod-modern__item-desc">{{ formatErrorMessage(err) }}</div>
+      <div v-if="modErrors.length > 0" class="mod-classic__card">
+        <div class="mod-classic__card-title mod-classic__card-title--warn">Mod Errors ({{ modErrors.length }})</div>
+        <div class="mod-classic__list">
+          <div v-for="(err, index) in modErrors" :key="`err-${err.id || 'unknown'}-${index}`" class="mod-classic__item">
+            <div class="mod-classic__item-title mod-classic__item-title--warn">{{ err.id || "unknown" }}</div>
+            <div class="mod-classic__item-desc">{{ formatErrorMessage(err) }}</div>
           </div>
         </div>
       </div>
     </div>
 
-    <div class="mod-modern__card mod-modern__card--wide">
-      <div class="mod-modern__card-title">Available Mods ({{ availableMods.length }})</div>
-      <div v-if="availableMods.length === 0" class="mod-modern__empty">No mods found</div>
-      <div v-else class="mod-modern__list">
-        <div v-for="mod in availableMods" :key="`available-${mod.id}`" class="mod-modern__item mod-modern__item--row">
-          <div class="mod-modern__item-info">
-            <div class="mod-modern__item-title">
+    <div class="mod-classic__card mod-classic__card--wide">
+      <div class="mod-classic__card-title">Available Mods ({{ availableMods.length }})</div>
+      <div v-if="availableMods.length === 0" class="mod-classic__empty">No mods found</div>
+      <div v-else class="mod-classic__list">
+        <div v-for="mod in availableMods" :key="`available-${mod.id}`" class="mod-classic__item mod-classic__item--row">
+          <div class="mod-classic__item-info">
+            <div class="mod-classic__item-title">
               {{ mod.name || mod.id }} <span v-if="mod.version">({{ mod.version }})</span>
             </div>
-            <div v-if="mod.description" class="mod-modern__item-desc">{{ mod.description }}</div>
-            <div class="mod-modern__item-meta">id: {{ mod.id }}</div>
+            <div v-if="mod.description" class="mod-classic__item-desc">{{ mod.description }}</div>
+            <div class="mod-classic__item-meta">id: {{ mod.id }}</div>
           </div>
           <button
-            class="mod-modern__pill mod-modern__pill--small"
+            class="mod-classic__btn mod-classic__btn--toggle mod-classic__btn--small"
             :class="{ 'is-active': isModEnabled(mod.id) }"
             @click="toggleMod(mod.id)"
           >
@@ -207,204 +207,200 @@ export default {
 </template>
 
 <style scoped>
-.mod-modern {
-  padding: 2rem 2.4rem 3rem;
+.mod-classic {
+  padding: 1.8rem 2.2rem 2.8rem;
   color: #ffffff;
-  font-family: Typewriter, "PT Mono", monospace;
+  font-family: Typewriter, serif;
+  background: transparent;
 }
 
-.mod-modern__header {
+.mod-classic__header {
   text-align: center;
-  margin-bottom: 1.4rem;
+  margin-bottom: 1.2rem;
 }
 
-.mod-modern__title {
-  font-size: 2.2rem;
-  letter-spacing: 0.16em;
+.mod-classic__title {
+  font-size: 1.8rem;
+  letter-spacing: 0.08em;
   color: #ffffff;
 }
 
-.mod-modern__subtitle {
-  margin-top: 0.4rem;
-  font-size: 1.2rem;
+.mod-classic__subtitle {
+  margin-top: 0.3rem;
+  font-size: 1.1rem;
   color: #ffffff;
 }
 
-.mod-modern__row {
+.mod-classic__row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 1.2rem;
   margin-bottom: 1.2rem;
 }
 
-.mod-modern__card {
-  background: rgba(20, 22, 28, 0.92);
-  border: 1px solid rgba(90, 255, 140, 0.6);
-  border-radius: 12px;
-  padding: 1.4rem 1.6rem;
+.mod-classic__card {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(80, 255, 120, 0.8);
+  border-radius: 4px;
+  padding: 1.3rem 1.5rem;
 }
 
-.mod-modern__card--tight {
-  padding: 1.2rem 1.4rem;
+.mod-classic__card--tight {
+  padding: 1.1rem 1.3rem;
 }
 
-.mod-modern__card--wide {
-  margin-top: 0.6rem;
+.mod-classic__card--wide {
+  margin-top: 0.4rem;
 }
 
-.mod-modern__label {
+.mod-classic__label {
   font-size: 1.1rem;
   color: #ffffff;
-  margin-bottom: 0.7rem;
+  margin-bottom: 0.6rem;
+  letter-spacing: 0.04em;
 }
 
-.mod-modern__toggle {
+.mod-classic__toggle {
   display: flex;
   gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
-.mod-modern__pill,
-.mod-modern__btn {
-  border-radius: 999px;
-  padding: 0.6rem 1.3rem;
+.mod-classic__btn {
+  border-radius: 4px;
+  padding: 0.5rem 1.2rem;
   font-size: 1.2rem;
-  border: 1px solid rgba(90, 255, 140, 0.6);
-  background: rgba(25, 26, 34, 0.9);
+  border: 1px solid rgba(255, 80, 80, 0.9);
+  background: rgba(110, 20, 20, 0.9);
   color: #ffffff;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+  cursor: pointer;
 }
 
-.mod-modern__pill.is-active {
-  background: linear-gradient(135deg, #49d46b, #8be86b);
-  color: #ffffff;
-  border-color: rgba(90, 255, 140, 0.9);
-  box-shadow: 0 6px 16px rgba(90, 255, 140, 0.35);
+.mod-classic__btn.is-active {
+  background: rgba(20, 120, 40, 0.95);
+  border-color: rgba(80, 255, 120, 0.95);
 }
 
-.mod-modern__pill--small {
+.mod-classic__btn--small {
   min-width: 72px;
   text-align: center;
 }
 
-.mod-modern__btn {
-  background: linear-gradient(135deg, #2a3b2f, #1a2a1f);
-  color: #ffffff;
-  border-color: rgba(90, 255, 140, 0.6);
-}
-
-.mod-modern__btn--ghost {
-  background: rgba(90, 255, 140, 0.12);
+.mod-classic__btn--ghost {
+  background: rgba(110, 20, 20, 0.35);
   color: #ffffff;
 }
 
-.mod-modern__input {
+.mod-classic__input {
   width: 100%;
-  background: rgba(14, 15, 19, 0.95);
-  border: 1px solid rgba(90, 255, 140, 0.6);
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(80, 255, 120, 0.8);
   color: #ffffff;
   padding: 0.7rem 1rem;
-  border-radius: 10px;
+  border-radius: 4px;
   font-size: 1.2rem;
 }
 
-.mod-modern__input:focus {
+.mod-classic__input:focus {
   outline: none;
-  border-color: rgba(90, 255, 140, 0.9);
-  box-shadow: 0 0 0 2px rgba(90, 255, 140, 0.2);
+  border-color: rgba(120, 255, 140, 1);
 }
 
-.mod-modern__zip-row {
+.mod-classic__zip-row {
   display: flex;
   gap: 0.8rem;
   flex-wrap: wrap;
   align-items: center;
-  margin-top: 1rem;
+  margin-top: 0.9rem;
 }
 
-.mod-modern__file {
+.mod-classic__file {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.6rem 1.2rem;
-  border-radius: 10px;
-  border: 1px dashed rgba(90, 255, 140, 0.6);
+  padding: 0.5rem 1.1rem;
+  border-radius: 4px;
+  border: 1px dashed rgba(80, 255, 120, 0.8);
   color: #ffffff;
   cursor: pointer;
+  background: rgba(0, 0, 0, 0.6);
 }
 
-.mod-modern__file-input {
+.mod-classic__file-input {
   display: none;
 }
 
-.mod-modern__card-title {
+.mod-classic__card-title {
   font-size: 1.2rem;
   color: #ffffff;
-  margin-bottom: 0.9rem;
+  margin-bottom: 0.8rem;
+  letter-spacing: 0.05em;
 }
 
-.mod-modern__card-title--warn {
+.mod-classic__card-title--warn {
   color: #ffffff;
 }
 
-.mod-modern__list {
+.mod-classic__list {
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
+  gap: 0.7rem;
   max-height: 30rem;
   overflow: auto;
 }
 
-.mod-modern__item {
-  padding-bottom: 0.8rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+.mod-classic__item {
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid rgba(80, 255, 120, 0.35);
 }
 
-.mod-modern__item:last-child {
+.mod-classic__item:last-child {
   border-bottom: none;
 }
 
-.mod-modern__item-title {
-  font-size: 1.3rem;
+.mod-classic__item-title {
+  font-size: 1.2rem;
   font-weight: bold;
 }
 
-.mod-modern__item-title--warn {
+.mod-classic__item-title--warn {
   color: #ffffff;
 }
 
-.mod-modern__item-desc {
+.mod-classic__item-desc {
   font-size: 1.1rem;
   color: #ffffff;
 }
 
-.mod-modern__item-meta {
+.mod-classic__item-meta {
   font-size: 1rem;
   color: #ffffff;
 }
 
-.mod-modern__item--row {
+.mod-classic__item--row {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
   align-items: center;
 }
 
-.mod-modern__item-info {
+.mod-classic__item-info {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
 }
 
-.mod-modern__empty {
+.mod-classic__empty {
   font-size: 1.1rem;
   color: #ffffff;
 }
 
 @media (max-width: 900px) {
-  .mod-modern__row {
+  .mod-classic__row {
     grid-template-columns: 1fr;
   }
-  .mod-modern__item--row {
+  .mod-classic__item--row {
     flex-direction: column;
     align-items: flex-start;
   }
