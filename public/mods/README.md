@@ -24,3 +24,18 @@ The entry module must export a `register(api)` function (default or named). The 
 - `api.ui.createContainer(suffix, parentSelector)`
 
 These hooks run after core logic to avoid changing the base calculation flow.
+
+## Mod SDK (Web)
+For browser-first mod development, use the helper library:
+
+```
+import { defineMod, addStyle } from "../sdk/mod-sdk.js";
+
+export default defineMod({
+  onInit(api) {
+    addStyle(".my-mod { color: #fff; }");
+  },
+});
+```
+
+See `public/mods/sdk/README.md` for more helpers.
