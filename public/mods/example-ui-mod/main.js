@@ -1,4 +1,4 @@
-﻿import { addStyle, defineMod } from "../sdk/mod-sdk.js";
+import { addStyle, defineMod } from "../sdk/mod-common.js";
 
 export default defineMod({
   onInit(api) {
@@ -31,3 +31,4 @@ export default defineMod({
     api.logger.info("Game loaded");
   },
 });
+

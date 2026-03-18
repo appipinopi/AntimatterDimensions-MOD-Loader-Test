@@ -1,7 +1,7 @@
 ﻿# Mod Loader
 
 ## Enable Mods
-Edit `public/mods/mods.json` and add entries to the `mods` array in the order you want them loaded.
+Use `public/mods/cors.json` to load external mod lists, or ZIP mode for local bundles.
 
 ## CDN List
 If you want to load additional mods from external URLs, add them to `public/mods/cors.json`.
@@ -35,7 +35,7 @@ These hooks run after core logic to avoid changing the base calculation flow.
 For browser-first mod development, use the helper library:
 
 ```
-import { defineMod, addStyle } from "../sdk/mod-sdk.js";
+import { defineMod, addStyle } from "../sdk/mod-common.js";
 
 export default defineMod({
   onInit(api) {
@@ -44,4 +44,5 @@ export default defineMod({
 });
 ```
 
+`mod-common.js` re-exports everything from `mod-sdk.js` and exposes `window.ModCommon`.
 See `public/mods/sdk/.docs/README.md` for more helpers.

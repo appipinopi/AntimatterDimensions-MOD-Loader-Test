@@ -6,7 +6,7 @@ This is a small helper library intended for web-based mod development.
 In your mod entry file:
 
 ```js
-import { defineMod, addStyle, createPanel } from "../sdk/mod-sdk.js";
+import { defineMod, addStyle, createPanel } from "../sdk/mod-common.js";
 
 export default defineMod({
   onInit(api) {
@@ -18,6 +18,8 @@ export default defineMod({
   },
 });
 ```
+
+`mod-common.js` re-exports everything from `mod-sdk.js` and exposes `window.ModCommon`.
 
 ## Helpers
 - `defineMod(def)` registers hook handlers in one place
