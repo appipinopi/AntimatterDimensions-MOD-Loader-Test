@@ -1,0 +1,23 @@
+name: Publish Mods
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          lfs: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "14"
+      - name: Publish mods to GitHub
+        env:
+          MODS_GH_TOKEN: ${{ secrets.MODS_GH_TOKEN }}
+          MODS_GITHUB_OWNER: appipinopi
+        run: node build/publish-mods.js

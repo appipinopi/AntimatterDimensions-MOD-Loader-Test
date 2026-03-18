@@ -15,3 +15,10 @@ const commit = {
 const json = JSON.stringify(commit);
 
 fs.writeFileSync(path.resolve(__dirname, "../dist/commit.json"), json);
+
+try {
+  const { syncModsRepo } = require("./mods-repo");
+  syncModsRepo();
+} catch (error) {
+  console.warn("[mods-repo] Failed to sync mods repository.", error);
+}
