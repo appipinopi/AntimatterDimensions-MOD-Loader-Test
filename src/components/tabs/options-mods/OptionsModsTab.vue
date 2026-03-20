@@ -54,6 +54,10 @@ export default {
     },
     async loadZipFile() {
       if (!this.modZipFile) return;
+      if (this.modSourceIsUrl) {
+        this.modSourceIsUrl = false;
+        this.applyModConfig({ mode: "zip" });
+      }
       await ModManager.loadZipFile(this.modZipFile);
       if (GameUI?.notify?.info) GameUI.notify.info("ZIP mod loaded");
       this.availableMods = ModManager.getAvailableMods();

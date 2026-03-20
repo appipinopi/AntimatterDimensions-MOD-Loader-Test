@@ -1,0 +1,8 @@
+{
+  "id": "speed-multiplier-mod",
+  "name": "Speed Multiplier Mod",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "entry": "main.js",
+  "description": "Adds quick game speed multipliers (1.5x to 100x)."
+}

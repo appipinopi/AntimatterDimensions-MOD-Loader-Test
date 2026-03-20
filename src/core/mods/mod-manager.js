@@ -230,6 +230,13 @@ function normalizeZipPath(value) {
   return stripLeadingSlash(value.replace(/\\/gu, "/"));
 }
 
+function inferIdFromManifestPath(path) {
+  const normalized = normalizeZipPath(path);
+  const parts = normalized.split("/");
+  if (parts.length >= 2) return parts[parts.length - 2];
+  return "mod";
+}
+
 function zipDirname(path) {
   const normalized = normalizeZipPath(path);
   const index = normalized.lastIndexOf("/");
@@ -538,8 +545,11 @@ export const ModManager = {
     try {
       modList = await source.getJson("mods.json");
     } catch (error) {
-      console.warn("[ModManager] Failed to read mods.json from zip.", error);
-      return;
+      modList = await this._buildZipListFromManifest(source);
+      if (!modList) {
+        console.warn("[ModManager] Failed to read mods.json from zip.", error);
+        return;
+      }
     }
 
     if (!modList || !Array.isArray(modList.mods)) {
@@ -709,6 +719,25 @@ export const ModManager = {
     info.version = modMeta.version || info.version || "";
     info.description = modMeta.description || info.description || "";
     this.availableMods.set(modMeta.id, info);
+  },
+
+  async _buildZipListFromManifest(source) {
+    const manifestFiles = source?.zip?.file?.(/manifest\.json$/u) || [];
+    if (manifestFiles.length === 0) return null;
+    const mods = [];
+    for (const file of manifestFiles) {
+      const manifestPath = normalizeZipPath(file.name);
+      try {
+        const manifest = await source.getJson(manifestPath);
+        const id = manifest?.id || inferIdFromManifestPath(manifestPath);
+        if (!id) continue;
+        mods.push({ id, manifest: manifestPath });
+      } catch (error) {
+        console.warn(`[ModManager] Failed to read manifest in zip: ${manifestPath}`, error);
+      }
+    }
+    if (mods.length === 0) return null;
+    return { mods };
   },
 
   async _storeZipLocally(blob, name) {
