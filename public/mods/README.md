@@ -9,6 +9,9 @@ Each repository entry can be:
 - A string URL to a `mods.json` file (or a base URL containing `mods.json`)
 - An object with fields like `id`, `name`, `listUrl` (or `baseUrl`), `description`, `homepage`, `enabled`, and `tags`
 
+Optional top-level fields:
+- `topicSearchUrl`: external discovery page for mod repositories (for example `https://github.com/topics/antimod`)
+
 ## Mod List
 Each repository serves a `mods.json` file:
 

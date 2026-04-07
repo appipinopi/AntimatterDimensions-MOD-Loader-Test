@@ -413,6 +413,7 @@ export const ModManager = {
   _zipSource: null,
   availableMods: new Map(),
   repositories: [],
+  repositoryTopicSearchUrl: "",
 
   setGameSpeedMultiplier(value, sourceId = LEGACY_SPEED_SOURCE) {
     const next = Number(value);
@@ -472,6 +473,10 @@ export const ModManager = {
 
   getRepositories() {
     return this.repositories.map(repo => ({ ...repo }));
+  },
+
+  getRepositoryTopicSearchUrl() {
+    return this.repositoryTopicSearchUrl || "";
   },
 
   resetHooks() {
@@ -575,6 +580,7 @@ export const ModManager = {
     this._installEventBridge();
     this.availableMods = new Map();
     this.repositories = [];
+    this.repositoryTopicSearchUrl = "";
 
     const config = this.getConfig();
     if (config.mode === "zip") {
@@ -590,8 +596,9 @@ export const ModManager = {
   async _loadFromRepositoryConfig() {
     const seen = new Set();
     const repositoryListUrl = resolveUrl(REPOSITORY_LIST_URL, window.location.href);
-    const repositories = await this._loadRepositoryEntries(repositoryListUrl);
+    const { repositories, topicSearchUrl } = await this._loadRepositoryEntries(repositoryListUrl);
     this.repositories = repositories;
+    this.repositoryTopicSearchUrl = topicSearchUrl || "";
     for (const repository of repositories) {
       if (!repository.enabled) continue;
       await this._loadListFromUrl(repository.listUrl, seen, repository);
@@ -603,7 +610,7 @@ export const ModManager = {
     try {
       data = await fetchJson(withCacheBust(listUrl));
     } catch (error) {
-      return [];
+      return { repositories: [], topicSearchUrl: "" };
     }
 
     let rawEntries = [];
@@ -613,6 +620,16 @@ export const ModManager = {
     else if (Array.isArray(data?.cors)) rawEntries = data.cors;
     else if (Array.isArray(data?.cdns)) rawEntries = data.cdns;
     else if (data?.repository) rawEntries = [data.repository];
+
+    let topicSearchUrl = "";
+    if (data && typeof data === "object") {
+      const rawTopicUrl = typeof data.topicSearchUrl === "string" ? data.topicSearchUrl : (
+        typeof data.searchTopicUrl === "string" ? data.searchTopicUrl : (
+          typeof data.topicUrl === "string" ? data.topicUrl : ""
+        )
+      );
+      topicSearchUrl = rawTopicUrl.trim();
+    }
 
     const repositories = [];
     const usedIds = new Set();
@@ -697,7 +714,7 @@ export const ModManager = {
       });
     }
 
-    return repositories;
+    return { repositories, topicSearchUrl };
   },
 
   async _loadListFromUrl(listUrl, seen, repository = undefined) {

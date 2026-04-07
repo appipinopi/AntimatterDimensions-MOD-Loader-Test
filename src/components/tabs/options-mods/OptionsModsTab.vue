@@ -12,6 +12,7 @@ export default {
       modErrors: [],
       availableMods: [],
       repositories: [],
+      repositoryTopicSearchUrl: "",
       modSearchQuery: "",
       selectedRepository: "all",
     };
@@ -57,6 +58,7 @@ export default {
       this.modErrors = ModManager.errors.slice();
       this.availableMods = ModManager.getAvailableMods();
       this.repositories = ModManager.getRepositories();
+      this.repositoryTopicSearchUrl = ModManager.getRepositoryTopicSearchUrl();
 
       if (this.selectedRepository !== "all") {
         const exists = this.repositories.some(repo => repo.id === this.selectedRepository);
@@ -82,6 +84,7 @@ export default {
       this.modErrors = ModManager.errors.slice();
       this.availableMods = ModManager.getAvailableMods();
       this.repositories = ModManager.getRepositories();
+      this.repositoryTopicSearchUrl = ModManager.getRepositoryTopicSearchUrl();
     },
     onZipFileSelected(event) {
       if (!event.target.files || event.target.files.length === 0) return;
@@ -163,6 +166,17 @@ export default {
 
     <div class="mod-classic__card" v-if="isRepositoryMode">
       <div class="mod-classic__label">Repositories ({{ repositories.length }})</div>
+      <div v-if="repositoryTopicSearchUrl" class="mod-classic__item-meta mod-classic__repo-topic">
+        topic search:
+        <a
+          class="mod-classic__link"
+          :href="repositoryTopicSearchUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {{ repositoryTopicSearchUrl }}
+        </a>
+      </div>
       <div v-if="repositories.length === 0" class="mod-classic__empty">
         No repositories configured. Add entries in <code>public/mods/repositories.json</code>.
       </div>
@@ -485,6 +499,10 @@ export default {
 .mod-classic__item-meta {
   font-size: 1rem;
   color: #ffffff;
+}
+
+.mod-classic__repo-topic {
+  margin-bottom: 0.8rem;
 }
 
 .mod-classic__item--row {
