@@ -7,10 +7,17 @@ const CORS_LIST_URL = "mods/cors.json";
 const ZIP_STORAGE_DB = "admod";
 const ZIP_STORAGE_STORE = "zip-mods";
 const ZIP_STORAGE_KEY = "last";
+const LEGACY_SPEED_SOURCE = "__legacy__";
 const DEFAULT_CONFIG = Object.freeze({
   mode: "url",
   zipUrl: "",
   disabledMods: [],
+});
+
+const SIZE_PRIORITY = Object.freeze({
+  large: 0,
+  medium: 1,
+  small: 2,
 });
 
 const HOOKS = {
@@ -79,6 +86,48 @@ function normalizeConfig(raw) {
     : [];
   if ("listUrl" in next) delete next.listUrl;
   return next;
+}
+
+function normalizeModSize(size) {
+  if (typeof size !== "string") return "medium";
+  const normalized = size.trim().toLowerCase();
+  if (normalized === "large" || normalized === "medium" || normalized === "small") return normalized;
+  return "medium";
+}
+
+function normalizeDependencyList(manifest) {
+  const required = [];
+  const optional = [];
+  const pushDep = (value, isOptional = false) => {
+    if (typeof value !== "string" || !value.trim()) return;
+    const id = value.trim();
+    (isOptional ? optional : required).push(id);
+  };
+
+  if (Array.isArray(manifest?.dependencies)) {
+    for (const dep of manifest.dependencies) {
+      if (typeof dep === "string") pushDep(dep, false);
+      else if (dep && typeof dep === "object") {
+        pushDep(dep.id, dep.optional === true);
+      }
+    }
+  }
+
+  if (Array.isArray(manifest?.optionalDependencies)) {
+    for (const dep of manifest.optionalDependencies) {
+      if (typeof dep === "string") pushDep(dep, true);
+      else if (dep && typeof dep === "object") pushDep(dep.id, true);
+    }
+  }
+
+  if (Array.isArray(manifest?.loadAfter)) {
+    for (const dep of manifest.loadAfter) pushDep(dep, true);
+  }
+
+  return {
+    required: Array.from(new Set(required)),
+    optional: Array.from(new Set(optional)).filter(id => !required.includes(id)),
+  };
 }
 
 function openZipStorage() {
@@ -206,6 +255,18 @@ function createModApi(modMeta) {
     }
   };
 
+  const gameSpeed = {
+    set(multiplier, scope = "default") {
+      ModManager.setGameSpeedMultiplier(multiplier, `${modMeta.id}:${scope}`);
+    },
+    reset(scope = "default") {
+      ModManager.clearGameSpeedMultiplier(`${modMeta.id}:${scope}`);
+    },
+    get() {
+      return ModManager.getGameSpeedMultiplier();
+    }
+  };
+
   return Object.freeze({
     apiVersion: MOD_API_VERSION,
     mod: Object.freeze({
@@ -219,6 +280,7 @@ function createModApi(modMeta) {
     hooks,
     events,
     ui,
+    gameSpeed,
   });
 }
 
@@ -309,7 +371,7 @@ export const ModManager = {
   loaded: false,
   mods: [],
   errors: [],
-  _gameSpeedMultiplier: 1,
+  _gameSpeedMultipliers: new Map(),
   _hooks: {
     [HOOKS.PRE_INIT]: [],
     [HOOKS.POST_INIT]: [],
@@ -321,14 +383,22 @@ export const ModManager = {
   _zipSource: null,
   availableMods: new Map(),
 
-  setGameSpeedMultiplier(value) {
+  setGameSpeedMultiplier(value, sourceId = LEGACY_SPEED_SOURCE) {
     const next = Number(value);
     if (!Number.isFinite(next) || next <= 0) return;
-    this._gameSpeedMultiplier = next;
+    this._gameSpeedMultipliers.set(String(sourceId || LEGACY_SPEED_SOURCE), next);
+  },
+
+  clearGameSpeedMultiplier(sourceId = LEGACY_SPEED_SOURCE) {
+    this._gameSpeedMultipliers.delete(String(sourceId || LEGACY_SPEED_SOURCE));
   },
 
   getGameSpeedMultiplier() {
-    return this._gameSpeedMultiplier;
+    let result = 1;
+    for (const value of this._gameSpeedMultipliers.values()) {
+      result *= value;
+    }
+    return result;
   },
 
   getConfig() {
@@ -383,6 +453,7 @@ export const ModManager = {
     }
     this.mods = [];
     this.errors = [];
+    this._gameSpeedMultipliers.clear();
     this.resetHooks();
   },
 
@@ -505,6 +576,7 @@ export const ModManager = {
       return;
     }
 
+    const candidates = [];
     for (const entry of modList.mods) {
       if (!entry || entry.enabled === false) continue;
       const id = entry.id;
@@ -516,8 +588,10 @@ export const ModManager = {
       }
       seen.add(id);
       if (this.isModDisabled(id)) continue;
-      await this._loadSingleFromUrl(entry, listUrl);
+      const candidate = await this._buildUrlCandidate(entry, listUrl);
+      if (candidate) candidates.push(candidate);
     }
+    await this._loadPreparedCandidates(candidates);
   },
 
   async _loadFromZipConfig(config) {
@@ -558,6 +632,7 @@ export const ModManager = {
     }
 
     const seen = new Set();
+    const candidates = [];
     for (const entry of modList.mods) {
       if (!entry || entry.enabled === false) continue;
       const id = entry.id;
@@ -569,21 +644,153 @@ export const ModManager = {
       }
       seen.add(id);
       if (this.isModDisabled(id)) continue;
-      await this._loadSingleFromZip(entry, source);
+      const candidate = await this._buildZipCandidate(entry, source);
+      if (candidate) candidates.push(candidate);
     }
+    await this._loadPreparedCandidates(candidates);
   },
 
-  async _loadSingleFromUrl(entry, listUrl) {
+  async _buildUrlCandidate(entry, listUrl) {
     const manifestPath = entry.manifest || `mods/${entry.id}/manifest.json`;
     const manifestUrl = resolveUrl(manifestPath, listUrl);
-
     let manifest;
     try {
       manifest = await fetchJson(withCacheBust(manifestUrl));
     } catch (error) {
       console.warn(`[ModManager] Failed to load manifest for ${entry.id}.`, error);
       this.errors.push({ id: entry.id, error });
-      return;
+      return null;
+    }
+
+    const modMeta = {
+      id: manifest.id || entry.id,
+      name: manifest.name || entry.id,
+      version: manifest.version || "0.0.0",
+      description: manifest.description || "",
+      manifestUrl,
+      size: normalizeModSize(manifest.modSize || manifest.size || entry.size),
+      dependencies: normalizeDependencyList(manifest),
+    };
+    this._updateAvailableMeta(modMeta);
+    const dependencies = normalizeDependencyList(manifest);
+    const size = normalizeModSize(manifest.modSize || manifest.size || entry.size);
+
+    return {
+      id: modMeta.id,
+      size,
+      requiredDeps: dependencies.required,
+      optionalDeps: dependencies.optional,
+      load: () => this._loadSingleFromUrl(entry, listUrl, manifest, manifestUrl),
+    };
+  },
+
+  async _buildZipCandidate(entry, source) {
+    const manifestPath = normalizeZipPath(entry.manifest || `mods/${entry.id}/manifest.json`);
+    let manifest;
+    try {
+      manifest = await source.getJson(manifestPath);
+    } catch (error) {
+      console.warn(`[ModManager] Failed to load manifest for ${entry.id} from zip.`, error);
+      this.errors.push({ id: entry.id, error });
+      return null;
+    }
+
+    const modMeta = {
+      id: manifest.id || entry.id,
+      name: manifest.name || entry.id,
+      version: manifest.version || "0.0.0",
+      description: manifest.description || "",
+      manifestUrl: manifestPath,
+      size: normalizeModSize(manifest.modSize || manifest.size || entry.size),
+      dependencies: normalizeDependencyList(manifest),
+    };
+    this._updateAvailableMeta(modMeta);
+    const dependencies = normalizeDependencyList(manifest);
+    const size = normalizeModSize(manifest.modSize || manifest.size || entry.size);
+
+    return {
+      id: modMeta.id,
+      size,
+      requiredDeps: dependencies.required,
+      optionalDeps: dependencies.optional,
+      load: () => this._loadSingleFromZip(entry, source, manifest, manifestPath),
+    };
+  },
+
+  async _loadPreparedCandidates(candidates) {
+    if (!Array.isArray(candidates) || candidates.length === 0) return;
+
+    const loadedIds = new Set(this.mods.map(mod => mod.id));
+    const pending = new Map();
+
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i];
+      if (!candidate?.id) continue;
+      if (pending.has(candidate.id) || loadedIds.has(candidate.id)) {
+        console.warn(`[ModManager] Duplicate prepared mod id skipped: ${candidate.id}`);
+        continue;
+      }
+      pending.set(candidate.id, { ...candidate, order: i });
+    }
+
+    while (pending.size > 0) {
+      const ready = [];
+      for (const candidate of pending.values()) {
+        const missingRequired = candidate.requiredDeps
+          .filter(dep => !loadedIds.has(dep) && !pending.has(dep));
+        if (missingRequired.length > 0) {
+          this.errors.push({
+            id: candidate.id,
+            error: new Error(`Missing required dependency: ${missingRequired.join(", ")}`)
+          });
+          pending.delete(candidate.id);
+          continue;
+        }
+        const requiredSatisfied = candidate.requiredDeps.every(dep => loadedIds.has(dep));
+        if (requiredSatisfied) ready.push(candidate);
+      }
+
+      if (ready.length === 0) {
+        for (const candidate of pending.values()) {
+          const unmet = candidate.requiredDeps.filter(dep => !loadedIds.has(dep));
+          this.errors.push({
+            id: candidate.id,
+            error: new Error(`Dependency cycle or unresolved dependency: ${unmet.join(", ") || "unknown"}`)
+          });
+        }
+        break;
+      }
+
+      ready.sort((a, b) => {
+        const sizeA = SIZE_PRIORITY[a.size] ?? SIZE_PRIORITY.medium;
+        const sizeB = SIZE_PRIORITY[b.size] ?? SIZE_PRIORITY.medium;
+        if (sizeA !== sizeB) return sizeA - sizeB;
+        return a.order - b.order;
+      });
+
+      for (const candidate of ready) {
+        pending.delete(candidate.id);
+        await candidate.load();
+        if (this.mods.some(mod => mod.id === candidate.id)) {
+          loadedIds.add(candidate.id);
+        }
+      }
+    }
+  },
+
+  async _loadSingleFromUrl(entry, listUrl, preparedManifest = undefined, preparedManifestUrl = undefined) {
+    const manifestPath = entry.manifest || `mods/${entry.id}/manifest.json`;
+    const manifestUrl = preparedManifestUrl || resolveUrl(manifestPath, listUrl);
+
+    let manifest = preparedManifest;
+    if (!manifest) {
+      try {
+        manifest = await fetchJson(withCacheBust(manifestUrl));
+      } catch (error) {
+        console.warn(`[ModManager] Failed to load manifest for ${entry.id}.`, error);
+        this.errors.push({ id: entry.id, error });
+        return;
+      }
     }
 
     const modMeta = {
@@ -630,15 +837,17 @@ export const ModManager = {
     }
   },
 
-  async _loadSingleFromZip(entry, source) {
-    const manifestPath = normalizeZipPath(entry.manifest || `mods/${entry.id}/manifest.json`);
-    let manifest;
-    try {
-      manifest = await source.getJson(manifestPath);
-    } catch (error) {
-      console.warn(`[ModManager] Failed to load manifest for ${entry.id} from zip.`, error);
-      this.errors.push({ id: entry.id, error });
-      return;
+  async _loadSingleFromZip(entry, source, preparedManifest = undefined, preparedManifestPath = undefined) {
+    const manifestPath = normalizeZipPath(preparedManifestPath || entry.manifest || `mods/${entry.id}/manifest.json`);
+    let manifest = preparedManifest;
+    if (!manifest) {
+      try {
+        manifest = await source.getJson(manifestPath);
+      } catch (error) {
+        console.warn(`[ModManager] Failed to load manifest for ${entry.id} from zip.`, error);
+        this.errors.push({ id: entry.id, error });
+        return;
+      }
     }
 
     const modMeta = {
@@ -697,6 +906,11 @@ export const ModManager = {
         name: id,
         version: "",
         description: "",
+        size: normalizeModSize(entry.size),
+        dependencies: {
+          required: [],
+          optional: [],
+        },
         sources: new Set(),
         manifest: entry.manifest || "",
       };
@@ -712,12 +926,24 @@ export const ModManager = {
     if (!info) {
       info = {
         id: modMeta.id,
+        size: "medium",
+        dependencies: {
+          required: [],
+          optional: [],
+        },
         sources: new Set(),
       };
     }
     info.name = modMeta.name || info.name || modMeta.id;
     info.version = modMeta.version || info.version || "";
     info.description = modMeta.description || info.description || "";
+    info.size = normalizeModSize(modMeta.size || info.size);
+    if (modMeta.dependencies) {
+      info.dependencies = {
+        required: Array.from(new Set(modMeta.dependencies.required || [])),
+        optional: Array.from(new Set(modMeta.dependencies.optional || [])),
+      };
+    }
     this.availableMods.set(modMeta.id, info);
   },
 

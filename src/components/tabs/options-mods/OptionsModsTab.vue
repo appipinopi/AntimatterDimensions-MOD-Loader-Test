@@ -153,7 +153,12 @@ export default {
               {{ mod.name }} <span v-if="mod.version">({{ mod.version }})</span>
             </div>
             <div v-if="mod.description" class="mod-classic__item-desc">{{ mod.description }}</div>
-            <div class="mod-classic__item-meta">id: {{ mod.id }}</div>
+            <div class="mod-classic__item-meta">
+              id: {{ mod.id }} | size: {{ mod.size || "medium" }}
+            </div>
+            <div v-if="mod.dependencies && mod.dependencies.required && mod.dependencies.required.length > 0" class="mod-classic__item-meta">
+              depends: {{ mod.dependencies.required.join(", ") }}
+            </div>
           </div>
         </div>
       </div>
@@ -178,7 +183,12 @@ export default {
               {{ mod.name || mod.id }} <span v-if="mod.version">({{ mod.version }})</span>
             </div>
             <div v-if="mod.description" class="mod-classic__item-desc">{{ mod.description }}</div>
-            <div class="mod-classic__item-meta">id: {{ mod.id }}</div>
+            <div class="mod-classic__item-meta">
+              id: {{ mod.id }} | size: {{ mod.size || "medium" }}
+            </div>
+            <div v-if="mod.dependencies && mod.dependencies.required && mod.dependencies.required.length > 0" class="mod-classic__item-meta">
+              depends: {{ mod.dependencies.required.join(", ") }}
+            </div>
           </div>
           <button
             class="mod-classic__btn mod-classic__btn--toggle mod-classic__btn--small"

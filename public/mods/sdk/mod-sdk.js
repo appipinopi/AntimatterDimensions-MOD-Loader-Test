@@ -1,15 +1,26 @@
-﻿const ACH_STORAGE_PREFIX = "admod:ach:";
+const ACH_STORAGE_PREFIX = "admod:ach:";
 const ACH_UI_ID = "mod-achievements-root";
 const ACH_TARGET_ID = "mod-sdk-achievements";
 
+const STAGE_STORAGE_PREFIX = "admod:stage:";
+const STAGE_UI_ID = "mod-stages-root";
+const STAGE_TARGET_ID = "mod-sdk-stages";
+
 export const ModSDK = {
-  version: "1.1.0",
+  version: "1.2.0",
 };
 
 const achievementState = {
   initialized: false,
   achievements: [],
   achievementMap: new Map(),
+  ui: null,
+};
+
+const stageState = {
+  initialized: false,
+  stages: [],
+  stageMap: new Map(),
   ui: null,
 };
 
@@ -23,6 +34,18 @@ function isAchievementUnlocked(modId, id) {
 
 function markAchievementUnlocked(modId, id) {
   localStorage.setItem(getAchievementKey(modId, id), "1");
+}
+
+function getStageKey(modId, id, field) {
+  return `${STAGE_STORAGE_PREFIX}${modId}:${id}:${field}`;
+}
+
+function getStoredStageFlag(modId, id, field) {
+  return localStorage.getItem(getStageKey(modId, id, field)) === "1";
+}
+
+function setStoredStageFlag(modId, id, field) {
+  localStorage.setItem(getStageKey(modId, id, field), "1");
 }
 
 function ensureAchievementUI() {
@@ -88,7 +111,7 @@ function ensureAchievementUI() {
       color: rgba(255,255,255,0.7);
     }
     #${ACH_UI_ID} .mod-ach-unlocked .mod-ach-name {
-      color: #7CFF7C;
+      color: #7cff7c;
     }
     `,
     "mod-achievements-style"
@@ -180,6 +203,195 @@ function evaluateAchievements() {
   }
 }
 
+function ensureStageUI() {
+  if (stageState.ui) return stageState.ui;
+  if (document.getElementById(STAGE_UI_ID)) return stageState.ui;
+
+  addStyle(
+    `
+    #${STAGE_UI_ID} {
+      position: fixed;
+      right: 12px;
+      top: 52px;
+      z-index: 9998;
+      font-family: "PT Mono", monospace;
+    }
+    #${STAGE_UI_ID} .mod-stage-toggle {
+      background: rgba(0,0,0,0.7);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    #${STAGE_UI_ID} .mod-stage-panel {
+      margin-top: 6px;
+      max-height: 60vh;
+      overflow: auto;
+      background: rgba(0,0,0,0.85);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      padding: 8px;
+      min-width: 280px;
+      display: none;
+    }
+    #${STAGE_UI_ID}.is-open .mod-stage-panel {
+      display: block;
+    }
+    #${STAGE_UI_ID} .mod-stage-group {
+      margin-bottom: 8px;
+    }
+    #${STAGE_UI_ID} .mod-stage-title {
+      font-weight: bold;
+      font-size: 12px;
+      margin-bottom: 4px;
+      color: #7cc0ff;
+    }
+    #${STAGE_UI_ID} .mod-stage-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    #${STAGE_UI_ID} .mod-stage-item:last-child {
+      border-bottom: none;
+    }
+    #${STAGE_UI_ID} .mod-stage-name {
+      font-size: 12px;
+    }
+    #${STAGE_UI_ID} .mod-stage-desc {
+      font-size: 11px;
+      color: rgba(255,255,255,0.7);
+    }
+    #${STAGE_UI_ID} .mod-stage-status {
+      font-size: 11px;
+      color: rgba(255,255,255,0.85);
+    }
+    #${STAGE_UI_ID} .mod-stage-unlocked .mod-stage-name {
+      color: #ffe07c;
+    }
+    #${STAGE_UI_ID} .mod-stage-completed .mod-stage-name {
+      color: #7cff7c;
+    }
+    `,
+    "mod-stages-style"
+  );
+
+  const root = document.createElement("div");
+  root.id = STAGE_UI_ID;
+
+  const toggle = document.createElement("button");
+  toggle.className = "mod-stage-toggle";
+  toggle.textContent = "Mod Stages";
+  toggle.addEventListener("click", () => {
+    root.classList.toggle("is-open");
+  });
+
+  const panel = document.createElement("div");
+  panel.className = "mod-stage-panel";
+
+  root.appendChild(toggle);
+  root.appendChild(panel);
+  document.body.appendChild(root);
+
+  stageState.ui = { root, panel };
+  return stageState.ui;
+}
+
+function renderStageUI() {
+  if (!stageState.stages.length) return;
+  const ui = ensureStageUI();
+  const panel = ui.panel;
+  panel.innerHTML = "";
+
+  const grouped = new Map();
+  for (const stage of stageState.stages) {
+    if (!grouped.has(stage.modId)) grouped.set(stage.modId, []);
+    grouped.get(stage.modId).push(stage);
+  }
+
+  for (const [modId, items] of grouped.entries()) {
+    const group = document.createElement("div");
+    group.className = "mod-stage-group";
+
+    const title = document.createElement("div");
+    title.className = "mod-stage-title";
+    title.textContent = modId;
+    group.appendChild(title);
+
+    for (const stage of items) {
+      const classNames = ["mod-stage-item"];
+      if (stage.unlocked) classNames.push("mod-stage-unlocked");
+      if (stage.completed) classNames.push("mod-stage-completed");
+      const item = document.createElement("div");
+      item.className = classNames.join(" ");
+
+      const name = document.createElement("div");
+      name.className = "mod-stage-name";
+      name.textContent = stage.name;
+
+      const desc = document.createElement("div");
+      desc.className = "mod-stage-desc";
+      desc.textContent = stage.description || "";
+
+      const status = document.createElement("div");
+      status.className = "mod-stage-status";
+      status.textContent = stage.completed
+        ? "completed"
+        : (stage.unlocked ? "unlocked" : "locked");
+
+      item.appendChild(name);
+      item.appendChild(desc);
+      item.appendChild(status);
+      group.appendChild(item);
+    }
+
+    panel.appendChild(group);
+  }
+}
+
+function ensureStageSystem() {
+  if (stageState.initialized) return;
+  stageState.initialized = true;
+  if (window.EventHub && window.GAME_EVENT) {
+    EventHub.logic.on(GAME_EVENT.GAME_TICK_AFTER, () => evaluateStages(), STAGE_TARGET_ID);
+    EventHub.ui.on(GAME_EVENT.UPDATE, () => renderStageUI(), STAGE_TARGET_ID);
+  }
+}
+
+function evaluateStages() {
+  for (const stage of stageState.stages) {
+    if (!stage.unlocked && typeof stage.unlockCondition === "function") {
+      try {
+        if (stage.unlockCondition(stage.api)) {
+          unlockStage(stage.api, stage.id);
+        }
+      } catch (error) {
+        stage.api?.logger?.error?.(`Stage unlock check failed: ${stage.id}`, error);
+      }
+    }
+
+    if (!stage.completed && typeof stage.completeCondition === "function") {
+      try {
+        if (stage.completeCondition(stage.api)) {
+          completeStage(stage.api, stage.id);
+        }
+      } catch (error) {
+        stage.api?.logger?.error?.(`Stage completion check failed: ${stage.id}`, error);
+      }
+    }
+  }
+}
+
+function resolveSpeedSource(apiOrScope, maybeScope) {
+  if (apiOrScope && typeof apiOrScope === "object" && apiOrScope.mod?.id) {
+    return `${apiOrScope.mod.id}:${String(maybeScope || "default")}`;
+  }
+  return String(apiOrScope || "legacy");
+}
+
 export function registerAchievement(api, definition) {
   ensureAchievementSystem();
   const def = definition || {};
@@ -216,11 +428,100 @@ export function unlockAchievement(api, id) {
   renderAchievementUI();
 }
 
-export function setGameSpeed(multiplier) {
+export function registerStage(api, definition) {
+  ensureStageSystem();
+  const def = definition || {};
+  if (!def.id || !def.name) throw new Error("Stage requires id and name");
+
+  const key = `${api.mod.id}:${def.id}`;
+  if (stageState.stageMap.has(key)) return;
+
+  const unlocked = getStoredStageFlag(api.mod.id, def.id, "unlocked");
+  const completed = getStoredStageFlag(api.mod.id, def.id, "completed");
+  const entry = {
+    id: def.id,
+    name: def.name,
+    description: def.description || "",
+    modId: api.mod.id,
+    unlocked,
+    completed,
+    unlockCondition: typeof def.unlockCondition === "function" ? def.unlockCondition : (() => true),
+    completeCondition: typeof def.completeCondition === "function" ? def.completeCondition : null,
+    onUnlock: typeof def.onUnlock === "function" ? def.onUnlock : null,
+    onComplete: typeof def.onComplete === "function" ? def.onComplete : null,
+    api,
+  };
+
+  stageState.stageMap.set(key, entry);
+  stageState.stages.push(entry);
+  renderStageUI();
+}
+
+export function unlockStage(api, id) {
+  const key = `${api.mod.id}:${id}`;
+  const entry = stageState.stageMap.get(key);
+  if (!entry || entry.unlocked) return;
+  entry.unlocked = true;
+  setStoredStageFlag(api.mod.id, id, "unlocked");
+  if (entry.onUnlock) {
+    try {
+      entry.onUnlock(api);
+    } catch (error) {
+      api?.logger?.error?.(`Stage unlock callback failed: ${id}`, error);
+    }
+  }
+  renderStageUI();
+}
+
+export function completeStage(api, id) {
+  const key = `${api.mod.id}:${id}`;
+  const entry = stageState.stageMap.get(key);
+  if (!entry || entry.completed) return;
+  entry.unlocked = true;
+  entry.completed = true;
+  setStoredStageFlag(api.mod.id, id, "unlocked");
+  setStoredStageFlag(api.mod.id, id, "completed");
+  if (entry.onComplete) {
+    try {
+      entry.onComplete(api);
+    } catch (error) {
+      api?.logger?.error?.(`Stage completion callback failed: ${id}`, error);
+    }
+  }
+  if (window.GameUI?.notify?.success) {
+    GameUI.notify.success(`Mod Stage Complete: ${entry.name}`);
+  }
+  renderStageUI();
+}
+
+export function getStageState(api, id) {
+  const key = `${api.mod.id}:${id}`;
+  const entry = stageState.stageMap.get(key);
+  if (!entry) return null;
+  return {
+    unlocked: entry.unlocked,
+    completed: entry.completed,
+  };
+}
+
+export function setGameSpeed(apiOrMultiplier, maybeMultiplier, maybeScope) {
+  let source = "legacy";
+  let multiplier = apiOrMultiplier;
+  if (apiOrMultiplier && typeof apiOrMultiplier === "object" && apiOrMultiplier.mod?.id) {
+    source = resolveSpeedSource(apiOrMultiplier, maybeScope);
+    multiplier = maybeMultiplier;
+  }
   const value = Number(multiplier);
   if (!Number.isFinite(value) || value <= 0) return;
   if (window.ModManager?.setGameSpeedMultiplier) {
-    window.ModManager.setGameSpeedMultiplier(value);
+    window.ModManager.setGameSpeedMultiplier(value, source);
+  }
+}
+
+export function resetGameSpeed(apiOrScope = "legacy", maybeScope) {
+  const source = resolveSpeedSource(apiOrScope, maybeScope);
+  if (window.ModManager?.clearGameSpeedMultiplier) {
+    window.ModManager.clearGameSpeedMultiplier(source);
   }
 }
 
@@ -231,14 +532,52 @@ export function getGameSpeed() {
   return 1;
 }
 
-export async function withGameSpeed(multiplier, fn) {
-  const prev = getGameSpeed();
+export async function withGameSpeed(apiOrMultiplier, maybeMultiplier, maybeFn, maybeScope) {
+  const hasApi = apiOrMultiplier && typeof apiOrMultiplier === "object" && apiOrMultiplier.mod?.id;
+  if (hasApi) {
+    const api = apiOrMultiplier;
+    const multiplier = maybeMultiplier;
+    const fn = maybeFn;
+    const scope = maybeScope || "temp";
+    const source = resolveSpeedSource(api, scope);
+    const current = getGameSpeed();
+    setGameSpeed(api, multiplier, scope);
+    try {
+      return await fn();
+    } finally {
+      resetGameSpeed(source);
+      if (!window.ModManager?.getGameSpeedMultiplier && window.ModManager?.setGameSpeedMultiplier) {
+        window.ModManager.setGameSpeedMultiplier(current, source);
+      }
+    }
+  }
+
+  const multiplier = apiOrMultiplier;
+  const fn = maybeMultiplier;
+  const current = getGameSpeed();
   setGameSpeed(multiplier);
   try {
     return await fn();
   } finally {
-    setGameSpeed(prev);
+    if (window.ModManager?.setGameSpeedMultiplier) {
+      window.ModManager.setGameSpeedMultiplier(current, "legacy");
+    }
   }
+}
+
+export function createSpeedController(api, scope = "default") {
+  const source = resolveSpeedSource(api, scope);
+  return Object.freeze({
+    set(multiplier) {
+      setGameSpeed(api, multiplier, scope);
+    },
+    reset() {
+      resetGameSpeed(source);
+    },
+    get() {
+      return getGameSpeed();
+    },
+  });
 }
 
 export function defineMod(definition) {
@@ -252,6 +591,12 @@ export function defineMod(definition) {
     if (Array.isArray(def.achievements)) {
       for (const ach of def.achievements) {
         registerAchievement(api, ach);
+      }
+    }
+
+    if (Array.isArray(def.stages)) {
+      for (const stage of def.stages) {
+        registerStage(api, stage);
       }
     }
 

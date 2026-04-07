@@ -25,9 +25,15 @@ export default defineMod({
 - `defineMod(def)` registers hook handlers in one place
 - `registerAchievement(api, def)` registers a mod achievement with UI display
 - `unlockAchievement(api, id)` manually unlocks a mod achievement
-- `setGameSpeed(multiplier)` sets global game speed multiplier
+- `registerStage(api, def)` registers stage flow with lock/unlock/complete states
+- `unlockStage(api, id)` unlocks a stage
+- `completeStage(api, id)` completes a stage
+- `getStageState(api, id)` gets stage state
+- `setGameSpeed(api, multiplier, scope)` sets speed using mod-local scope
+- `resetGameSpeed(api, scope)` clears a mod speed scope
 - `getGameSpeed()` reads current game speed multiplier
-- `withGameSpeed(multiplier, fn)` runs a function under a temporary speed
+- `withGameSpeed(api, multiplier, fn, scope)` runs a function with scoped speed
+- `createSpeedController(api, scope)` returns isolated set/reset/get helpers
 - `addStyle(cssText, id)` injects CSS
 - `addStylesheet(url, id)` injects external CSS
 - `createPanel(api, options)` creates a container under `#ui` (or custom parent)
@@ -50,3 +56,19 @@ export default defineMod({
 ```
 
 Achievements are stored in localStorage under `admod:ach:*`.
+
+## Stage Example
+
+```js
+export default defineMod({
+  stages: [
+    {
+      id: "phase-1",
+      name: "Phase 1",
+      description: "Reach 1e10 antimatter",
+      unlockCondition: () => true,
+      completeCondition: () => player.antimatter?.log10?.() >= 10,
+    },
+  ],
+});
+```

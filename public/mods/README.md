@@ -17,6 +17,11 @@ Each mod folder must include a `manifest.json` with at least:
 - `apiVersion`
 - `entry`
 
+Optional fields for large-scale packs:
+- `modSize`: `"large" | "medium" | "small"` (load priority)
+- `dependencies`: required mod IDs (medium packs can depend on large packs)
+- `optionalDependencies`: optional load-after IDs
+
 ## Entry API
 The entry module must export a `register(api)` function (default or named). The `api` provides:
 - `api.hooks.onPreInit(fn)`
@@ -30,6 +35,8 @@ The entry module must export a `register(api)` function (default or named). The 
 - `api.ui.createContainer(suffix, parentSelector)`
 
 These hooks run after core logic to avoid changing the base calculation flow.
+
+The loader resolves dependencies before loading and isolates runtime errors per mod.
 
 ## Mod SDK (Web)
 For browser-first mod development, use the helper library:
@@ -46,3 +53,9 @@ export default defineMod({
 
 `mod-common.js` re-exports everything from `mod-sdk.js` and exposes `window.ModCommon`.
 See `public/mods/sdk/.docs/README.md` for more helpers.
+
+## Sample Packs
+- `public/mods/large-celestial-frontier`
+- `public/mods/large-quantum-archives`
+- `public/mods/medium-fusion-link` (depends on both large packs)
+- `public/mods/small-safe-speed` (scoped speed utility)

@@ -1,4 +1,4 @@
-import { defineMod, addStyle, setGameSpeed, getGameSpeed } from "../sdk/mod-common.js";
+import { addStyle, createSpeedController, defineMod, getGameSpeed } from "../sdk/mod-common.js";
 
 const SPEED_OPTIONS = [1.5, 2, 3, 5, 10, 20, 100];
 const STORAGE_KEY = "speedMultiplier";
@@ -9,6 +9,7 @@ function formatSpeed(value) {
 
 export default defineMod({
   onInit(api) {
+    const speed = createSpeedController(api, "speed-multiplier");
     addStyle(
       `
       .mod-speed-panel {
@@ -78,7 +79,7 @@ export default defineMod({
 
     function applySpeed(value) {
       if (!SPEED_OPTIONS.includes(value)) return;
-      setGameSpeed(value);
+      speed.set(value);
       api.storage.set(STORAGE_KEY, value);
       updateUI(value);
     }
@@ -98,13 +99,14 @@ export default defineMod({
 
     const stored = api.storage.get(STORAGE_KEY, null);
     const initial = SPEED_OPTIONS.includes(stored) ? stored : null;
-    if (initial) setGameSpeed(initial);
+    if (initial) speed.set(initial);
     updateUI(initial);
   },
   onGameLoad(api) {
+    const speed = createSpeedController(api, "speed-multiplier");
     const stored = api.storage.get(STORAGE_KEY, null);
     if (SPEED_OPTIONS.includes(stored)) {
-      setGameSpeed(stored);
+      speed.set(stored);
     }
   }
 });
