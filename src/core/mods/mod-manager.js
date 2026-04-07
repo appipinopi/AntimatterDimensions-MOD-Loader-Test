@@ -98,6 +98,7 @@ function normalizeModSize(size) {
 function normalizeDependencyList(manifest) {
   const required = [];
   const optional = [];
+  const loadAfter = [];
   const pushDep = (value, isOptional = false) => {
     if (typeof value !== "string" || !value.trim()) return;
     const id = value.trim();
@@ -113,6 +114,13 @@ function normalizeDependencyList(manifest) {
     }
   }
 
+  if (Array.isArray(manifest?.requiredPlugins)) {
+    for (const dep of manifest.requiredPlugins) {
+      if (typeof dep === "string") pushDep(dep, false);
+      else if (dep && typeof dep === "object") pushDep(dep.id, false);
+    }
+  }
+
   if (Array.isArray(manifest?.optionalDependencies)) {
     for (const dep of manifest.optionalDependencies) {
       if (typeof dep === "string") pushDep(dep, true);
@@ -121,12 +129,18 @@ function normalizeDependencyList(manifest) {
   }
 
   if (Array.isArray(manifest?.loadAfter)) {
-    for (const dep of manifest.loadAfter) pushDep(dep, true);
+    for (const dep of manifest.loadAfter) {
+      if (typeof dep === "string" && dep.trim()) loadAfter.push(dep.trim());
+      else if (dep && typeof dep === "object" && typeof dep.id === "string" && dep.id.trim()) {
+        loadAfter.push(dep.id.trim());
+      }
+    }
   }
 
   return {
     required: Array.from(new Set(required)),
     optional: Array.from(new Set(optional)).filter(id => !required.includes(id)),
+    loadAfter: Array.from(new Set(loadAfter)).filter(id => !required.includes(id)),
   };
 }
 
@@ -449,7 +463,21 @@ export const ModManager = {
 
   unload() {
     for (const mod of this.mods) {
+      if (typeof mod.unload === "function") {
+        try {
+          mod.unload();
+        } catch (error) {
+          mod.logger?.error?.("Mod unload callback failed.", error);
+        }
+      }
       if (mod.api?.events) mod.api.events.offAll();
+      if (window.ModCommon?.unregisterModRuntime) {
+        try {
+          window.ModCommon.unregisterModRuntime(mod.id);
+        } catch (error) {
+          console.warn(`[ModManager] Failed to unregister runtime for ${mod.id}`, error);
+        }
+      }
     }
     this.mods = [];
     this.errors = [];
@@ -670,6 +698,11 @@ export const ModManager = {
       manifestUrl,
       size: normalizeModSize(manifest.modSize || manifest.size || entry.size),
       dependencies: normalizeDependencyList(manifest),
+      author: manifest.author || "",
+      tags: Array.isArray(manifest.tags) ? manifest.tags.filter(tag => typeof tag === "string") : [],
+      repo: manifest.repo || manifest.homepage || "",
+      affectsStyle: manifest.affectsStyle === true,
+      affectsGameplay: manifest.affectsGameplay === true || manifest.affectsBlocks === true,
     };
     this._updateAvailableMeta(modMeta);
     const dependencies = normalizeDependencyList(manifest);
@@ -680,6 +713,7 @@ export const ModManager = {
       size,
       requiredDeps: dependencies.required,
       optionalDeps: dependencies.optional,
+      loadAfterDeps: dependencies.loadAfter,
       load: () => this._loadSingleFromUrl(entry, listUrl, manifest, manifestUrl),
     };
   },
@@ -703,6 +737,11 @@ export const ModManager = {
       manifestUrl: manifestPath,
       size: normalizeModSize(manifest.modSize || manifest.size || entry.size),
       dependencies: normalizeDependencyList(manifest),
+      author: manifest.author || "",
+      tags: Array.isArray(manifest.tags) ? manifest.tags.filter(tag => typeof tag === "string") : [],
+      repo: manifest.repo || manifest.homepage || "",
+      affectsStyle: manifest.affectsStyle === true,
+      affectsGameplay: manifest.affectsGameplay === true || manifest.affectsBlocks === true,
     };
     this._updateAvailableMeta(modMeta);
     const dependencies = normalizeDependencyList(manifest);
@@ -713,6 +752,7 @@ export const ModManager = {
       size,
       requiredDeps: dependencies.required,
       optionalDeps: dependencies.optional,
+      loadAfterDeps: dependencies.loadAfter,
       load: () => this._loadSingleFromZip(entry, source, manifest, manifestPath),
     };
   },
@@ -747,7 +787,8 @@ export const ModManager = {
           continue;
         }
         const requiredSatisfied = candidate.requiredDeps.every(dep => loadedIds.has(dep));
-        if (requiredSatisfied) ready.push(candidate);
+        const loadAfterReady = (candidate.loadAfterDeps || []).every(dep => loadedIds.has(dep) || !pending.has(dep));
+        if (requiredSatisfied && loadAfterReady) ready.push(candidate);
       }
 
       if (ready.length === 0) {
@@ -828,8 +869,11 @@ export const ModManager = {
 
     const api = createModApi(modMeta);
     try {
-      await Promise.resolve(register(api));
-      this.mods.push({ ...modMeta, api, entryUrl: entryUrlWithCache, manifest });
+      const unloadCallback = await Promise.resolve(register(api));
+      const unload = typeof unloadCallback === "function"
+        ? unloadCallback
+        : (typeof unloadCallback?.onUnload === "function" ? () => unloadCallback.onUnload(api) : null);
+      this.mods.push({ ...modMeta, api, entryUrl: entryUrlWithCache, manifest, unload, logger });
       logger.info("Loaded");
     } catch (error) {
       logger.error("Mod registration failed.", error);
@@ -887,8 +931,11 @@ export const ModManager = {
 
     const api = createModApi(modMeta);
     try {
-      await Promise.resolve(register(api));
-      this.mods.push({ ...modMeta, api, entryUrl, manifest });
+      const unloadCallback = await Promise.resolve(register(api));
+      const unload = typeof unloadCallback === "function"
+        ? unloadCallback
+        : (typeof unloadCallback?.onUnload === "function" ? () => unloadCallback.onUnload(api) : null);
+      this.mods.push({ ...modMeta, api, entryUrl, manifest, unload, logger });
       logger.info("Loaded");
     } catch (error) {
       logger.error("Mod registration failed.", error);
@@ -910,7 +957,13 @@ export const ModManager = {
         dependencies: {
           required: [],
           optional: [],
+          loadAfter: [],
         },
+        author: "",
+        tags: [],
+        repo: "",
+        affectsStyle: false,
+        affectsGameplay: false,
         sources: new Set(),
         manifest: entry.manifest || "",
       };
@@ -930,7 +983,13 @@ export const ModManager = {
         dependencies: {
           required: [],
           optional: [],
+          loadAfter: [],
         },
+        author: "",
+        tags: [],
+        repo: "",
+        affectsStyle: false,
+        affectsGameplay: false,
         sources: new Set(),
       };
     }
@@ -942,8 +1001,14 @@ export const ModManager = {
       info.dependencies = {
         required: Array.from(new Set(modMeta.dependencies.required || [])),
         optional: Array.from(new Set(modMeta.dependencies.optional || [])),
+        loadAfter: Array.from(new Set(modMeta.dependencies.loadAfter || [])),
       };
     }
+    info.author = modMeta.author || info.author || "";
+    info.tags = Array.isArray(modMeta.tags) ? Array.from(new Set(modMeta.tags)) : (info.tags || []);
+    info.repo = modMeta.repo || info.repo || "";
+    info.affectsStyle = modMeta.affectsStyle === true || info.affectsStyle === true;
+    info.affectsGameplay = modMeta.affectsGameplay === true || info.affectsGameplay === true;
     this.availableMods.set(modMeta.id, info);
   },
 

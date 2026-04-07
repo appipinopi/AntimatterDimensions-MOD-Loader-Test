@@ -21,6 +21,8 @@ Optional fields for large-scale packs:
 - `modSize`: `"large" | "medium" | "small"` (load priority)
 - `dependencies`: required mod IDs (medium packs can depend on large packs)
 - `optionalDependencies`: optional load-after IDs
+- `requiredPlugins`: alias of required dependencies (Easy-BDP style metadata)
+- `author`, `tags`, `repo`, `affectsStyle`, `affectsGameplay`
 
 ## Entry API
 The entry module must export a `register(api)` function (default or named). The `api` provides:
@@ -37,6 +39,7 @@ The entry module must export a `register(api)` function (default or named). The 
 These hooks run after core logic to avoid changing the base calculation flow.
 
 The loader resolves dependencies before loading and isolates runtime errors per mod.
+If a mod returns a cleanup function from `register(api)`, it is called on reload/unload.
 
 ## Mod SDK (Web)
 For browser-first mod development, use the helper library:

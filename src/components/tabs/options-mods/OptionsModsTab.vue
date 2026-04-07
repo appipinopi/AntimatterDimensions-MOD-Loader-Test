@@ -9,10 +9,21 @@ export default {
       modZipUrl: "",
       modZipFileName: "",
       modZipFile: null,
+      modSearchText: "",
+      modSizeFilter: "all",
+      modStatusFilter: "all",
       loadedMods: [],
       modErrors: [],
       availableMods: [],
     };
+  },
+  computed: {
+    filteredLoadedMods() {
+      return this.filterMods(this.loadedMods, true);
+    },
+    filteredAvailableMods() {
+      return this.filterMods(this.availableMods, false);
+    },
   },
   methods: {
     update() {
@@ -71,9 +82,41 @@ export default {
       player.options.modLoader.disabledMods = next.disabledMods;
       await this.reloadMods();
     },
+    async setAllModsEnabled(enabled) {
+      const targets = this.availableMods.map(mod => mod.id).filter(Boolean);
+      for (const id of targets) {
+        ModManager.setModDisabled(id, !enabled);
+      }
+      if (!player.options.modLoader) player.options.modLoader = {};
+      player.options.modLoader.disabledMods = ModManager.getConfig().disabledMods;
+      await this.reloadMods();
+    },
     toggleMod(id) {
       const enabled = !this.isModEnabled(id);
       this.setModEnabled(id, enabled);
+    },
+    filterMods(mods, loadedOnly) {
+      return mods.filter(mod => {
+        const query = this.modSearchText.trim().toLowerCase();
+        if (query) {
+          const haystack = [
+            mod.name,
+            mod.id,
+            mod.description,
+            mod.author,
+            ...(Array.isArray(mod.tags) ? mod.tags : []),
+          ].filter(Boolean).join(" ").toLowerCase();
+          if (!haystack.includes(query)) return false;
+        }
+
+        if (this.modSizeFilter !== "all" && (mod.size || "medium") !== this.modSizeFilter) return false;
+
+        if (this.modStatusFilter === "enabled" && !this.isModEnabled(mod.id)) return false;
+        if (this.modStatusFilter === "disabled" && this.isModEnabled(mod.id)) return false;
+        if (this.modStatusFilter === "loaded" && !loadedOnly) return false;
+
+        return true;
+      });
     },
     formatErrorMessage(err) {
       if (!err) return "Unknown error";
@@ -118,6 +161,32 @@ export default {
       </div>
     </div>
 
+    <div class="mod-classic__card mod-classic__card--tight">
+      <div class="mod-classic__label">Manager</div>
+      <div class="mod-classic__manager">
+        <input
+          v-model="modSearchText"
+          class="mod-classic__input mod-classic__input--small"
+          type="text"
+          placeholder="Search name/id/tag"
+        >
+        <select v-model="modSizeFilter" class="mod-classic__input mod-classic__input--small">
+          <option value="all">All Sizes</option>
+          <option value="large">Large</option>
+          <option value="medium">Medium</option>
+          <option value="small">Small</option>
+        </select>
+        <select v-model="modStatusFilter" class="mod-classic__input mod-classic__input--small">
+          <option value="all">All Status</option>
+          <option value="enabled">Enabled</option>
+          <option value="disabled">Disabled</option>
+          <option value="loaded">Loaded Only</option>
+        </select>
+        <button class="mod-classic__btn" @click="setAllModsEnabled(true)">Enable All</button>
+        <button class="mod-classic__btn mod-classic__btn--ghost" @click="setAllModsEnabled(false)">Disable All</button>
+      </div>
+    </div>
+
     <div v-if="!modSourceIsUrl" class="mod-classic__card">
       <div class="mod-classic__label">ZIP URL</div>
       <input
@@ -145,10 +214,10 @@ export default {
 
     <div class="mod-classic__row">
       <div class="mod-classic__card">
-        <div class="mod-classic__card-title">Loaded Mods ({{ loadedMods.length }})</div>
-        <div v-if="loadedMods.length === 0" class="mod-classic__empty">No mods loaded</div>
+        <div class="mod-classic__card-title">Loaded Mods ({{ filteredLoadedMods.length }} / {{ loadedMods.length }})</div>
+        <div v-if="filteredLoadedMods.length === 0" class="mod-classic__empty">No mods loaded</div>
         <div v-else class="mod-classic__list">
-          <div v-for="mod in loadedMods" :key="mod.id" class="mod-classic__item">
+          <div v-for="mod in filteredLoadedMods" :key="mod.id" class="mod-classic__item">
             <div class="mod-classic__item-title">
               {{ mod.name }} <span v-if="mod.version">({{ mod.version }})</span>
             </div>
@@ -156,8 +225,12 @@ export default {
             <div class="mod-classic__item-meta">
               id: {{ mod.id }} | size: {{ mod.size || "medium" }}
             </div>
+            <div v-if="mod.author" class="mod-classic__item-meta">author: {{ mod.author }}</div>
             <div v-if="mod.dependencies && mod.dependencies.required && mod.dependencies.required.length > 0" class="mod-classic__item-meta">
               depends: {{ mod.dependencies.required.join(", ") }}
+            </div>
+            <div v-if="mod.tags && mod.tags.length > 0" class="mod-classic__item-meta">
+              tags: {{ mod.tags.join(", ") }}
             </div>
           </div>
         </div>
@@ -174,10 +247,10 @@ export default {
     </div>
 
     <div class="mod-classic__card mod-classic__card--wide">
-      <div class="mod-classic__card-title">Available Mods ({{ availableMods.length }})</div>
-      <div v-if="availableMods.length === 0" class="mod-classic__empty">No mods found</div>
+      <div class="mod-classic__card-title">Available Mods ({{ filteredAvailableMods.length }} / {{ availableMods.length }})</div>
+      <div v-if="filteredAvailableMods.length === 0" class="mod-classic__empty">No mods found</div>
       <div v-else class="mod-classic__list">
-        <div v-for="mod in availableMods" :key="`available-${mod.id}`" class="mod-classic__item mod-classic__item--row">
+        <div v-for="mod in filteredAvailableMods" :key="`available-${mod.id}`" class="mod-classic__item mod-classic__item--row">
           <div class="mod-classic__item-info">
             <div class="mod-classic__item-title">
               {{ mod.name || mod.id }} <span v-if="mod.version">({{ mod.version }})</span>
@@ -186,8 +259,15 @@ export default {
             <div class="mod-classic__item-meta">
               id: {{ mod.id }} | size: {{ mod.size || "medium" }}
             </div>
+            <div v-if="mod.author" class="mod-classic__item-meta">author: {{ mod.author }}</div>
             <div v-if="mod.dependencies && mod.dependencies.required && mod.dependencies.required.length > 0" class="mod-classic__item-meta">
               depends: {{ mod.dependencies.required.join(", ") }}
+            </div>
+            <div v-if="mod.dependencies && mod.dependencies.loadAfter && mod.dependencies.loadAfter.length > 0" class="mod-classic__item-meta">
+              load-after: {{ mod.dependencies.loadAfter.join(", ") }}
+            </div>
+            <div v-if="mod.tags && mod.tags.length > 0" class="mod-classic__item-meta">
+              tags: {{ mod.tags.join(", ") }}
             </div>
           </div>
           <button
@@ -257,6 +337,13 @@ export default {
   letter-spacing: 0.04em;
 }
 
+.mod-classic__manager {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.7rem;
+  align-items: center;
+}
+
 .mod-classic__toggle {
   display: flex;
   gap: 0.6rem;
@@ -297,6 +384,11 @@ export default {
   padding: 0.7rem 1rem;
   border-radius: 4px;
   font-size: 1.2rem;
+}
+
+.mod-classic__input--small {
+  padding: 0.55rem 0.8rem;
+  font-size: 1.1rem;
 }
 
 .mod-classic__input:focus {

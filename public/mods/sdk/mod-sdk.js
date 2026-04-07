@@ -139,7 +139,10 @@ function ensureAchievementUI() {
 }
 
 function renderAchievementUI() {
-  if (!achievementState.achievements.length) return;
+  if (!achievementState.achievements.length) {
+    if (achievementState.ui?.panel) achievementState.ui.panel.innerHTML = "";
+    return;
+  }
   const ui = ensureAchievementUI();
   const panel = ui.panel;
   panel.innerHTML = "";
@@ -301,7 +304,10 @@ function ensureStageUI() {
 }
 
 function renderStageUI() {
-  if (!stageState.stages.length) return;
+  if (!stageState.stages.length) {
+    if (stageState.ui?.panel) stageState.ui.panel.innerHTML = "";
+    return;
+  }
   const ui = ensureStageUI();
   const panel = ui.panel;
   panel.innerHTML = "";
@@ -383,6 +389,30 @@ function evaluateStages() {
       }
     }
   }
+}
+
+function removePanelsForMod(modId) {
+  const selector = `[id^="mod-${modId}-"]`;
+  const nodes = document.querySelectorAll(selector);
+  for (const node of nodes) node.remove();
+}
+
+export function unregisterModRuntime(modId) {
+  if (!modId || typeof modId !== "string") return;
+
+  achievementState.achievements = achievementState.achievements.filter(ach => ach.modId !== modId);
+  for (const key of Array.from(achievementState.achievementMap.keys())) {
+    if (key.startsWith(`${modId}:`)) achievementState.achievementMap.delete(key);
+  }
+
+  stageState.stages = stageState.stages.filter(stage => stage.modId !== modId);
+  for (const key of Array.from(stageState.stageMap.keys())) {
+    if (key.startsWith(`${modId}:`)) stageState.stageMap.delete(key);
+  }
+
+  removePanelsForMod(modId);
+  renderAchievementUI();
+  renderStageUI();
 }
 
 function resolveSpeedSource(apiOrScope, maybeScope) {
@@ -628,6 +658,16 @@ export function defineMod(definition) {
         if (typeof handler === "function") api.events.onUI(eventName, (...args) => handler(api, ...args));
       }
     }
+
+    return () => {
+      if (typeof def.onUnload === "function") {
+        try {
+          def.onUnload(api);
+        } catch (error) {
+          api?.logger?.error?.("onUnload failed", error);
+        }
+      }
+    };
   };
 }
 

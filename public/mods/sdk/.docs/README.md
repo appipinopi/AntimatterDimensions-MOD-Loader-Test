@@ -34,6 +34,7 @@ export default defineMod({
 - `getGameSpeed()` reads current game speed multiplier
 - `withGameSpeed(api, multiplier, fn, scope)` runs a function with scoped speed
 - `createSpeedController(api, scope)` returns isolated set/reset/get helpers
+- `unregisterModRuntime(modId)` clears SDK runtime state for one mod
 - `addStyle(cssText, id)` injects CSS
 - `addStylesheet(url, id)` injects external CSS
 - `createPanel(api, options)` creates a container under `#ui` (or custom parent)
@@ -70,5 +71,18 @@ export default defineMod({
       completeCondition: () => player.antimatter?.log10?.() >= 10,
     },
   ],
+});
+```
+
+## Unload Example
+
+```js
+export default defineMod({
+  onInit(api) {
+    // setup
+  },
+  onUnload(api) {
+    api.logger.info("cleaning up");
+  },
 });
 ```
