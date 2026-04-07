@@ -3,13 +3,13 @@ import { DEV } from "@/env";
 
 const MOD_API_VERSION = 1;
 const CONFIG_KEY = "admod:config";
-const CORS_LIST_URL = "mods/cors.json";
+const REPOSITORY_LIST_URL = "mods/repositories.json";
 const ZIP_STORAGE_DB = "admod";
 const ZIP_STORAGE_STORE = "zip-mods";
 const ZIP_STORAGE_KEY = "last";
 const LEGACY_SPEED_SOURCE = "__legacy__";
 const DEFAULT_CONFIG = Object.freeze({
-  mode: "url",
+  mode: "repository",
   zipUrl: "",
   disabledMods: [],
 });
@@ -79,13 +79,29 @@ function resolveRegister(modModule) {
 
 function normalizeConfig(raw) {
   const next = { ...DEFAULT_CONFIG, ...(raw || {}) };
-  next.mode = next.mode === "zip" ? "zip" : "url";
+  // Legacy migration: "url" mode is now called "repository".
+  if (next.mode === "url") next.mode = "repository";
+  next.mode = next.mode === "zip" ? "zip" : "repository";
   next.zipUrl = typeof next.zipUrl === "string" ? next.zipUrl.trim() : "";
   next.disabledMods = Array.isArray(next.disabledMods)
     ? next.disabledMods.filter(id => typeof id === "string" && id.trim()).map(id => id.trim())
     : [];
   if ("listUrl" in next) delete next.listUrl;
   return next;
+}
+
+function normalizeRepositoryId(value, fallbackIndex = 0) {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim().toLowerCase().replace(/[^a-z0-9_-]+/giu, "-");
+  }
+  return `repository-${fallbackIndex + 1}`;
+}
+
+function normalizeStringList(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter(item => typeof item === "string" && item.trim())
+    .map(item => item.trim());
 }
 
 function normalizeModSize(size) {
@@ -396,6 +412,7 @@ export const ModManager = {
   _eventBridgeInstalled: false,
   _zipSource: null,
   availableMods: new Map(),
+  repositories: [],
 
   setGameSpeedMultiplier(value, sourceId = LEGACY_SPEED_SOURCE) {
     const next = Number(value);
@@ -447,8 +464,14 @@ export const ModManager = {
     return Array.from(this.availableMods.values()).map(info => ({
       ...info,
       sources: Array.from(info.sources || []),
+      repositoryIds: Array.from(info.repositoryIds || []),
+      repositoryNames: Array.from(info.repositoryNames || []),
       enabled: !this.isModDisabled(info.id),
     }));
+  },
+
+  getRepositories() {
+    return this.repositories.map(repo => ({ ...repo }));
   },
 
   resetHooks() {
@@ -551,6 +574,7 @@ export const ModManager = {
     if (this.loaded) return;
     this._installEventBridge();
     this.availableMods = new Map();
+    this.repositories = [];
 
     const config = this.getConfig();
     if (config.mode === "zip") {
@@ -559,49 +583,149 @@ export const ModManager = {
       return;
     }
 
-    await this._loadFromUrlConfig(config);
+    await this._loadFromRepositoryConfig();
     this.loaded = true;
   },
 
-  async _loadFromUrlConfig(config) {
+  async _loadFromRepositoryConfig() {
     const seen = new Set();
-    const corsListUrl = resolveUrl(CORS_LIST_URL, window.location.href);
-    const corsUrls = await this._loadCorsUrls(corsListUrl);
-    for (const corsUrl of corsUrls) {
-      const normalized = corsUrl.trim();
-      if (!normalized) continue;
-      const listFromCors = normalized.endsWith(".json")
-        ? normalized
-        : resolveUrl("mods.json", ensureTrailingSlash(normalized));
-      await this._loadListFromUrl(listFromCors, seen);
+    const repositoryListUrl = resolveUrl(REPOSITORY_LIST_URL, window.location.href);
+    const repositories = await this._loadRepositoryEntries(repositoryListUrl);
+    this.repositories = repositories;
+    for (const repository of repositories) {
+      if (!repository.enabled) continue;
+      await this._loadListFromUrl(repository.listUrl, seen, repository);
     }
   },
 
-  async _loadCorsUrls(listUrl) {
+  async _loadRepositoryEntries(listUrl) {
     let data;
     try {
       data = await fetchJson(withCacheBust(listUrl));
     } catch (error) {
       return [];
     }
-    if (Array.isArray(data)) return data;
-    if (data && Array.isArray(data.cors)) return data.cors;
-    if (data && Array.isArray(data.cdns)) return data.cdns;
-    return [];
+
+    let rawEntries = [];
+    if (Array.isArray(data)) rawEntries = data;
+    else if (Array.isArray(data?.repositories)) rawEntries = data.repositories;
+    else if (Array.isArray(data?.repos)) rawEntries = data.repos;
+    else if (Array.isArray(data?.cors)) rawEntries = data.cors;
+    else if (Array.isArray(data?.cdns)) rawEntries = data.cdns;
+    else if (data?.repository) rawEntries = [data.repository];
+
+    const repositories = [];
+    const usedIds = new Set();
+
+    for (let index = 0; index < rawEntries.length; index++) {
+      const entry = rawEntries[index];
+      let idSource = "";
+      let name = "";
+      let description = "";
+      let homepage = "";
+      let listPath = "";
+      let enabled = true;
+      let tags = [];
+
+      if (typeof entry === "string") {
+        const value = entry.trim();
+        if (!value) continue;
+        if (value.endsWith(".json")) listPath = value;
+        else listPath = `${ensureTrailingSlash(value)}mods.json`;
+        idSource = value;
+        name = value;
+        homepage = value;
+      } else if (entry && typeof entry === "object") {
+        enabled = entry.enabled !== false;
+        description = typeof entry.description === "string" ? entry.description.trim() : "";
+        tags = normalizeStringList(entry.tags);
+        const rawList = typeof entry.listUrl === "string" ? entry.listUrl : (
+          typeof entry.list === "string" ? entry.list : (
+            typeof entry.modsUrl === "string" ? entry.modsUrl : (
+              typeof entry.mods === "string" ? entry.mods : (
+                typeof entry.modList === "string" ? entry.modList : ""
+              )
+            )
+          )
+        );
+        let rawBase = typeof entry.baseUrl === "string" ? entry.baseUrl : (
+          typeof entry.base === "string" ? entry.base : (
+            typeof entry.repositoryUrl === "string" ? entry.repositoryUrl : (
+              typeof entry.repository === "string" ? entry.repository : (
+                typeof entry.rootUrl === "string" ? entry.rootUrl : ""
+              )
+            )
+          )
+        );
+        const rawUrl = typeof entry.url === "string" ? entry.url.trim() : "";
+        if (!rawBase && !rawList && rawUrl) {
+          if (rawUrl.endsWith(".json")) listPath = rawUrl;
+          else rawBase = rawUrl;
+        }
+        if (!listPath && rawList?.trim()) listPath = rawList.trim();
+        if (!listPath && rawBase?.trim()) {
+          listPath = `${ensureTrailingSlash(rawBase.trim())}mods.json`;
+        }
+        homepage = typeof entry.homepage === "string" && entry.homepage.trim()
+          ? entry.homepage.trim()
+          : (typeof entry.repo === "string" && entry.repo.trim()
+            ? entry.repo.trim()
+            : (rawBase || rawUrl || listPath));
+        idSource = entry.id || entry.slug || entry.name || rawBase || rawList || rawUrl || listPath;
+        name = typeof entry.name === "string" && entry.name.trim()
+          ? entry.name.trim()
+          : normalizeRepositoryId(idSource || "", index);
+      }
+
+      if (!listPath) continue;
+
+      let id = normalizeRepositoryId(idSource, index);
+      while (usedIds.has(id)) id = `${id}-${index + 1}`;
+      usedIds.add(id);
+
+      repositories.push({
+        id,
+        name,
+        description,
+        homepage,
+        tags,
+        enabled,
+        listUrl: resolveUrl(listPath, listUrl),
+        status: enabled ? "pending" : "disabled",
+        error: "",
+        modCount: 0,
+      });
+    }
+
+    return repositories;
   },
 
-  async _loadListFromUrl(listUrl, seen) {
+  async _loadListFromUrl(listUrl, seen, repository = undefined) {
     let modList;
     try {
       modList = await fetchJson(withCacheBust(listUrl));
     } catch (error) {
       console.warn(`[ModManager] No mod list found or failed to load. (${listUrl})`, error);
+      if (repository) {
+        repository.status = "error";
+        repository.error = error.message || "Failed to fetch";
+      }
       return;
     }
 
     if (!modList || !Array.isArray(modList.mods)) {
       console.warn(`[ModManager] Invalid mod list format. (${listUrl})`);
+      if (repository) {
+        repository.status = "error";
+        repository.error = "Invalid mod list format";
+      }
       return;
+    }
+
+    if (repository) {
+      repository.status = "loaded";
+      repository.error = "";
+      repository.modCount = 0;
     }
 
     const candidates = [];
@@ -609,14 +733,15 @@ export const ModManager = {
       if (!entry || entry.enabled === false) continue;
       const id = entry.id;
       if (!id || typeof id !== "string") continue;
-      this._registerAvailableEntry(entry, listUrl);
+      this._registerAvailableEntry(entry, repository || listUrl);
+      if (repository) repository.modCount++;
       if (seen.has(id)) {
         console.warn(`[ModManager] Duplicate mod id skipped: ${id}`);
         continue;
       }
       seen.add(id);
       if (this.isModDisabled(id)) continue;
-      const candidate = await this._buildUrlCandidate(entry, listUrl);
+      const candidate = await this._buildUrlCandidate(entry, listUrl, repository);
       if (candidate) candidates.push(candidate);
     }
     await this._loadPreparedCandidates(candidates);
@@ -678,7 +803,7 @@ export const ModManager = {
     await this._loadPreparedCandidates(candidates);
   },
 
-  async _buildUrlCandidate(entry, listUrl) {
+  async _buildUrlCandidate(entry, listUrl, repository = undefined) {
     const manifestPath = entry.manifest || `mods/${entry.id}/manifest.json`;
     const manifestUrl = resolveUrl(manifestPath, listUrl);
     let manifest;
@@ -703,6 +828,8 @@ export const ModManager = {
       repo: manifest.repo || manifest.homepage || "",
       affectsStyle: manifest.affectsStyle === true,
       affectsGameplay: manifest.affectsGameplay === true || manifest.affectsBlocks === true,
+      repositoryId: repository?.id || "",
+      repositoryName: repository?.name || "",
     };
     this._updateAvailableMeta(modMeta);
     const dependencies = normalizeDependencyList(manifest);
@@ -714,7 +841,7 @@ export const ModManager = {
       requiredDeps: dependencies.required,
       optionalDeps: dependencies.optional,
       loadAfterDeps: dependencies.loadAfter,
-      load: () => this._loadSingleFromUrl(entry, listUrl, manifest, manifestUrl),
+      load: () => this._loadSingleFromUrl(entry, listUrl, manifest, manifestUrl, repository),
     };
   },
 
@@ -742,6 +869,8 @@ export const ModManager = {
       repo: manifest.repo || manifest.homepage || "",
       affectsStyle: manifest.affectsStyle === true,
       affectsGameplay: manifest.affectsGameplay === true || manifest.affectsBlocks === true,
+      repositoryId: "zip://mods.json",
+      repositoryName: "ZIP Archive",
     };
     this._updateAvailableMeta(modMeta);
     const dependencies = normalizeDependencyList(manifest);
@@ -819,7 +948,13 @@ export const ModManager = {
     }
   },
 
-  async _loadSingleFromUrl(entry, listUrl, preparedManifest = undefined, preparedManifestUrl = undefined) {
+  async _loadSingleFromUrl(
+    entry,
+    listUrl,
+    preparedManifest = undefined,
+    preparedManifestUrl = undefined,
+    repository = undefined
+  ) {
     const manifestPath = entry.manifest || `mods/${entry.id}/manifest.json`;
     const manifestUrl = preparedManifestUrl || resolveUrl(manifestPath, listUrl);
 
@@ -840,6 +975,8 @@ export const ModManager = {
       version: manifest.version || "0.0.0",
       description: manifest.description || "",
       manifestUrl,
+      repositoryId: repository?.id || "",
+      repositoryName: repository?.name || "",
     };
     this._updateAvailableMeta(modMeta);
     const logger = createLogger(modMeta.id, modMeta.name);
@@ -900,6 +1037,8 @@ export const ModManager = {
       version: manifest.version || "0.0.0",
       description: manifest.description || "",
       manifestUrl: manifestPath,
+      repositoryId: "zip://mods.json",
+      repositoryName: "ZIP Archive",
     };
     this._updateAvailableMeta(modMeta);
     const logger = createLogger(modMeta.id, modMeta.name);
@@ -943,8 +1082,10 @@ export const ModManager = {
     }
   },
 
-  _registerAvailableEntry(entry, listUrl) {
+  _registerAvailableEntry(entry, source) {
     if (!entry?.id) return;
+    const sourceId = typeof source === "string" ? source : source?.id || "unknown";
+    const sourceName = typeof source === "string" ? source : source?.name || sourceId;
     const id = entry.id;
     let info = this.availableMods.get(id);
     if (!info) {
@@ -965,10 +1106,14 @@ export const ModManager = {
         affectsStyle: false,
         affectsGameplay: false,
         sources: new Set(),
+        repositoryIds: new Set(),
+        repositoryNames: new Set(),
         manifest: entry.manifest || "",
       };
     }
-    info.sources.add(listUrl);
+    info.sources.add(sourceId);
+    if (sourceId) info.repositoryIds.add(sourceId);
+    if (sourceName) info.repositoryNames.add(sourceName);
     if (entry.manifest) info.manifest = entry.manifest;
     this.availableMods.set(id, info);
   },
@@ -991,6 +1136,8 @@ export const ModManager = {
         affectsStyle: false,
         affectsGameplay: false,
         sources: new Set(),
+        repositoryIds: new Set(),
+        repositoryNames: new Set(),
       };
     }
     info.name = modMeta.name || info.name || modMeta.id;
@@ -1009,6 +1156,8 @@ export const ModManager = {
     info.repo = modMeta.repo || info.repo || "";
     info.affectsStyle = modMeta.affectsStyle === true || info.affectsStyle === true;
     info.affectsGameplay = modMeta.affectsGameplay === true || info.affectsGameplay === true;
+    if (modMeta.repositoryId) info.repositoryIds.add(modMeta.repositoryId);
+    if (modMeta.repositoryName) info.repositoryNames.add(modMeta.repositoryName);
     this.availableMods.set(modMeta.id, info);
   },
 

@@ -1,13 +1,25 @@
-﻿# Mod Loader
+# Mod Loader
 
 ## Enable Mods
-Use `public/mods/cors.json` to load external mod lists, or ZIP mode for local bundles.
+Use `public/mods/repositories.json` for repository-based loading, or ZIP mode for local bundles.
 
-## CDN List
-If you want to load additional mods from external URLs, add them to `public/mods/cors.json`.
-Each entry should be either:
-- A full URL to a `mods.json`
-- A base URL which contains a `mods.json` file
+## Repository Catalog
+Add repositories to `public/mods/repositories.json`.
+Each repository entry can be:
+- A string URL to a `mods.json` file (or a base URL containing `mods.json`)
+- An object with fields like `id`, `name`, `listUrl` (or `baseUrl`), `description`, `homepage`, `enabled`, and `tags`
+
+## Mod List
+Each repository serves a `mods.json` file:
+
+```json
+{
+  "schemaVersion": 1,
+  "mods": [
+    { "id": "my-mod", "enabled": true }
+  ]
+}
+```
 
 ## Manifest
 Each mod folder must include a `manifest.json` with at least:
@@ -44,7 +56,7 @@ If a mod returns a cleanup function from `register(api)`, it is called on reload
 ## Mod SDK (Web)
 For browser-first mod development, use the helper library:
 
-```
+```js
 import { defineMod, addStyle } from "../sdk/mod-common.js";
 
 export default defineMod({

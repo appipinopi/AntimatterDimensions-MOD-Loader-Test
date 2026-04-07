@@ -908,7 +908,7 @@ window.player = {
       invertTTgenDisplay: false,
       autoRealityForFilter: false,
       modLoader: {
-        mode: "url",
+        mode: "repository",
         zipUrl: "",
         disabledMods: [],
       },

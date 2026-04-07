@@ -1,8 +1,28 @@
-﻿{
+{
   "schemaVersion": 1,
   "mods": [
     {
       "id": "example-ui-mod",
+      "enabled": true
+    },
+    {
+      "id": "large-celestial-frontier",
+      "enabled": true
+    },
+    {
+      "id": "large-quantum-archives",
+      "enabled": true
+    },
+    {
+      "id": "medium-fusion-link",
+      "enabled": true
+    },
+    {
+      "id": "small-safe-speed",
+      "enabled": true
+    },
+    {
+      "id": "speed-multiplier-mod",
       "enabled": true
     }
   ]
