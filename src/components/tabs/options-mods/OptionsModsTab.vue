@@ -9,21 +9,10 @@ export default {
       modZipUrl: "",
       modZipFileName: "",
       modZipFile: null,
-      modSearchText: "",
-      modSizeFilter: "all",
-      modStatusFilter: "all",
       loadedMods: [],
       modErrors: [],
       availableMods: [],
     };
-  },
-  computed: {
-    filteredLoadedMods() {
-      return this.filterMods(this.loadedMods, true);
-    },
-    filteredAvailableMods() {
-      return this.filterMods(this.availableMods, false);
-    },
   },
   methods: {
     update() {
@@ -82,41 +71,9 @@ export default {
       player.options.modLoader.disabledMods = next.disabledMods;
       await this.reloadMods();
     },
-    async setAllModsEnabled(enabled) {
-      const targets = this.availableMods.map(mod => mod.id).filter(Boolean);
-      for (const id of targets) {
-        ModManager.setModDisabled(id, !enabled);
-      }
-      if (!player.options.modLoader) player.options.modLoader = {};
-      player.options.modLoader.disabledMods = ModManager.getConfig().disabledMods;
-      await this.reloadMods();
-    },
     toggleMod(id) {
       const enabled = !this.isModEnabled(id);
       this.setModEnabled(id, enabled);
-    },
-    filterMods(mods, loadedOnly) {
-      return mods.filter(mod => {
-        const query = this.modSearchText.trim().toLowerCase();
-        if (query) {
-          const haystack = [
-            mod.name,
-            mod.id,
-            mod.description,
-            mod.author,
-            ...(Array.isArray(mod.tags) ? mod.tags : []),
-          ].filter(Boolean).join(" ").toLowerCase();
-          if (!haystack.includes(query)) return false;
-        }
-
-        if (this.modSizeFilter !== "all" && (mod.size || "medium") !== this.modSizeFilter) return false;
-
-        if (this.modStatusFilter === "enabled" && !this.isModEnabled(mod.id)) return false;
-        if (this.modStatusFilter === "disabled" && this.isModEnabled(mod.id)) return false;
-        if (this.modStatusFilter === "loaded" && !loadedOnly) return false;
-
-        return true;
-      });
     },
     formatErrorMessage(err) {
       if (!err) return "Unknown error";
@@ -137,7 +94,7 @@ export default {
 
     <div class="mod-classic__row">
       <div class="mod-classic__card mod-classic__card--tight">
-        <div class="mod-classic__label">Source</div>
+        <div class="mod-classic__label">Source Select</div>
         <div class="mod-classic__toggle">
           <button
             class="mod-classic__btn mod-classic__btn--toggle"
@@ -156,68 +113,63 @@ export default {
         </div>
       </div>
       <div class="mod-classic__card mod-classic__card--tight">
-        <div class="mod-classic__label">Actions</div>
+        <div class="mod-classic__label">Action</div>
         <button class="mod-classic__btn" @click="reloadMods">Reload Mods</button>
       </div>
     </div>
 
-    <div class="mod-classic__card mod-classic__card--tight">
-      <div class="mod-classic__label">Manager</div>
-      <div class="mod-classic__manager">
-        <input
-          v-model="modSearchText"
-          class="mod-classic__input mod-classic__input--small"
-          type="text"
-          placeholder="Search name/id/tag"
-        >
-        <select v-model="modSizeFilter" class="mod-classic__input mod-classic__input--small">
-          <option value="all">All Sizes</option>
-          <option value="large">Large</option>
-          <option value="medium">Medium</option>
-          <option value="small">Small</option>
-        </select>
-        <select v-model="modStatusFilter" class="mod-classic__input mod-classic__input--small">
-          <option value="all">All Status</option>
-          <option value="enabled">Enabled</option>
-          <option value="disabled">Disabled</option>
-          <option value="loaded">Loaded Only</option>
-        </select>
-        <button class="mod-classic__btn" @click="setAllModsEnabled(true)">Enable All</button>
-        <button class="mod-classic__btn mod-classic__btn--ghost" @click="setAllModsEnabled(false)">Disable All</button>
+    <div class="mod-classic__card">
+      <div v-if="modSourceIsUrl" class="mod-classic__source-view">
+        <div class="mod-classic__label">URL Source</div>
+        <div class="mod-classic__item-desc">
+          Auto-loads mod lists from <code>public/mods/cors.json</code>.
+        </div>
+        <div class="mod-classic__item-meta">Switch to ZIP if you want to install local archives directly.</div>
       </div>
-    </div>
 
-    <div v-if="!modSourceIsUrl" class="mod-classic__card">
-      <div class="mod-classic__label">ZIP URL</div>
-      <input
-        class="mod-classic__input"
-        type="text"
-        placeholder="https://example.com/mods.zip"
-        :value="modZipUrl"
-        @change="handleModZipUrlChange"
-      >
-      <div class="mod-classic__zip-row">
-        <label class="mod-classic__file">
-          <input
-            class="mod-classic__file-input"
-            type="file"
-            accept=".zip"
-            @change="onZipFileSelected"
-          >
-          <span>Choose ZIP</span>
-        </label>
-        <button class="mod-classic__btn mod-classic__btn--ghost" @click="loadZipFile">
-          Load ZIP {{ modZipFileName ? "(" + modZipFileName + ")" : "" }}
-        </button>
+      <div v-else class="mod-classic__source-view">
+        <div class="mod-classic__label">ZIP Source</div>
+        <div class="mod-classic__zip-grid">
+          <div>
+            <div class="mod-classic__item-meta">ZIP URL</div>
+            <input
+              class="mod-classic__input"
+              type="text"
+              placeholder="https://example.com/mods.zip"
+              :value="modZipUrl"
+              @change="handleModZipUrlChange"
+            >
+          </div>
+          <div>
+            <div class="mod-classic__item-meta">Local ZIP File</div>
+            <div class="mod-classic__zip-row">
+              <label class="mod-classic__file">
+                <input
+                  class="mod-classic__file-input"
+                  type="file"
+                  accept=".zip"
+                  @change="onZipFileSelected"
+                >
+                <span>Choose ZIP</span>
+              </label>
+              <button class="mod-classic__btn mod-classic__btn--ghost" @click="loadZipFile">
+                Load ZIP
+              </button>
+            </div>
+            <div class="mod-classic__item-meta" v-if="modZipFileName">
+              Selected: {{ modZipFileName }}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
     <div class="mod-classic__row">
       <div class="mod-classic__card">
-        <div class="mod-classic__card-title">Loaded Mods ({{ filteredLoadedMods.length }} / {{ loadedMods.length }})</div>
-        <div v-if="filteredLoadedMods.length === 0" class="mod-classic__empty">No mods loaded</div>
+        <div class="mod-classic__card-title">Loaded Mods ({{ loadedMods.length }})</div>
+        <div v-if="loadedMods.length === 0" class="mod-classic__empty">No mods loaded</div>
         <div v-else class="mod-classic__list">
-          <div v-for="mod in filteredLoadedMods" :key="mod.id" class="mod-classic__item">
+          <div v-for="mod in loadedMods" :key="mod.id" class="mod-classic__item">
             <div class="mod-classic__item-title">
               {{ mod.name }} <span v-if="mod.version">({{ mod.version }})</span>
             </div>
@@ -247,10 +199,10 @@ export default {
     </div>
 
     <div class="mod-classic__card mod-classic__card--wide">
-      <div class="mod-classic__card-title">Available Mods ({{ filteredAvailableMods.length }} / {{ availableMods.length }})</div>
-      <div v-if="filteredAvailableMods.length === 0" class="mod-classic__empty">No mods found</div>
+      <div class="mod-classic__card-title">Available Mods ({{ availableMods.length }})</div>
+      <div v-if="availableMods.length === 0" class="mod-classic__empty">No mods found</div>
       <div v-else class="mod-classic__list">
-        <div v-for="mod in filteredAvailableMods" :key="`available-${mod.id}`" class="mod-classic__item mod-classic__item--row">
+        <div v-for="mod in availableMods" :key="`available-${mod.id}`" class="mod-classic__item mod-classic__item--row">
           <div class="mod-classic__item-info">
             <div class="mod-classic__item-title">
               {{ mod.name || mod.id }} <span v-if="mod.version">({{ mod.version }})</span>
@@ -337,11 +289,16 @@ export default {
   letter-spacing: 0.04em;
 }
 
-.mod-classic__manager {
+.mod-classic__source-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.mod-classic__zip-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: 0.7rem;
-  align-items: center;
+  grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr));
+  gap: 1rem;
 }
 
 .mod-classic__toggle {
@@ -384,11 +341,6 @@ export default {
   padding: 0.7rem 1rem;
   border-radius: 4px;
   font-size: 1.2rem;
-}
-
-.mod-classic__input--small {
-  padding: 0.55rem 0.8rem;
-  font-size: 1.1rem;
 }
 
 .mod-classic__input:focus {
