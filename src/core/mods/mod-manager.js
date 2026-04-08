@@ -215,6 +215,21 @@ function normalizeModSize(size) {
   return "medium";
 }
 
+function inferModSizeFromId(modId) {
+  if (typeof modId !== "string") return "medium";
+  const normalized = modId.trim().toLowerCase();
+  if (normalized.startsWith("large-") || normalized.startsWith("large_")) return "large";
+  if (normalized.startsWith("small-") || normalized.startsWith("small_")) return "small";
+  if (normalized.startsWith("medium-") || normalized.startsWith("medium_")) return "medium";
+  return "medium";
+}
+
+function resolveModSize(primarySize, modId, secondarySize = undefined) {
+  if (typeof primarySize === "string" && primarySize.trim()) return normalizeModSize(primarySize);
+  if (typeof secondarySize === "string" && secondarySize.trim()) return normalizeModSize(secondarySize);
+  return inferModSizeFromId(modId);
+}
+
 function normalizeDependencyList(manifest) {
   const required = [];
   const optional = [];
@@ -815,6 +830,7 @@ export const ModManager = {
   },
 
   unload() {
+    const transientZipSources = new Set();
     for (const mod of this.mods) {
       if (typeof mod.unload === "function") {
         try {
@@ -832,6 +848,16 @@ export const ModManager = {
         }
       }
       this._settingsListeners.delete(String(mod.id));
+      if (mod.zipSource && mod.zipSource !== this._zipSource) {
+        transientZipSources.add(mod.zipSource);
+      }
+    }
+    for (const source of transientZipSources) {
+      try {
+        source.revokeAll();
+      } catch (error) {
+        console.warn("[ModManager] Failed to release zip source.", error);
+      }
     }
     this.mods = [];
     this.errors = [];
@@ -1084,10 +1110,40 @@ export const ModManager = {
       }
       seen.add(id);
       if (this.isModDisabled(id)) continue;
-      const candidate = await this._buildUrlCandidate(entry, listUrl, repository);
+      const hasZipSource = typeof entry.zip === "string" && entry.zip.trim();
+      const candidate = hasZipSource
+        ? await this._buildRemoteZipCandidate(entry, listUrl, repository)
+        : await this._buildUrlCandidate(entry, listUrl, repository);
       if (candidate) candidates.push(candidate);
     }
     await this._loadPreparedCandidates(candidates);
+  },
+
+  async _buildRemoteZipCandidate(entry, listUrl, repository = undefined) {
+    const zipPath = typeof entry.zip === "string" ? entry.zip.trim() : "";
+    if (!zipPath) return null;
+    const zipUrl = resolveUrl(zipPath, listUrl);
+    let source;
+    try {
+      source = await ZipSource.fromUrl(withCacheBust(zipUrl));
+    } catch (error) {
+      const id = entry.id || zipPath;
+      console.warn(`[ModManager] Failed to load zip source for ${id}.`, error);
+      this.errors.push({ id, error });
+      return null;
+    }
+
+    const zipEntry = {
+      ...entry,
+      id: entry.id || undefined,
+      manifest: entry.manifest || "manifest.json",
+    };
+    const candidate = await this._buildZipCandidate(zipEntry, source, repository, zipUrl);
+    if (!candidate) {
+      source.revokeAll();
+      return null;
+    }
+    return candidate;
   },
 
   async _loadFromZipConfig(config) {
@@ -1166,7 +1222,7 @@ export const ModManager = {
       version: manifest.version || "0.0.0",
       description: manifest.description || "",
       manifestUrl,
-      size: normalizeModSize(manifest.modSize || manifest.size || entry.size),
+      size: resolveModSize(manifest.modSize || manifest.size, manifest.id || entry.id, entry.size),
       dependencies: normalizeDependencyList(manifest),
       author: manifest.author || "",
       tags: Array.isArray(manifest.tags) ? manifest.tags.filter(tag => typeof tag === "string") : [],
@@ -1187,7 +1243,7 @@ export const ModManager = {
       return null;
     }
     const dependencies = normalizeDependencyList(manifest);
-    const size = normalizeModSize(manifest.modSize || manifest.size || entry.size);
+    const size = resolveModSize(manifest.modSize || manifest.size, manifest.id || entry.id, entry.size);
 
     return {
       id: modMeta.id,
@@ -1199,7 +1255,7 @@ export const ModManager = {
     };
   },
 
-  async _buildZipCandidate(entry, source) {
+  async _buildZipCandidate(entry, source, repository = undefined, sourceLabel = "ZIP Archive") {
     const manifestPath = normalizeZipPath(entry.manifest || `mods/${entry.id}/manifest.json`);
     let manifest;
     try {
@@ -1218,15 +1274,15 @@ export const ModManager = {
       version: manifest.version || "0.0.0",
       description: manifest.description || "",
       manifestUrl: manifestPath,
-      size: normalizeModSize(manifest.modSize || manifest.size || entry.size),
+      size: resolveModSize(manifest.modSize || manifest.size, manifest.id || entry.id, entry.size),
       dependencies: normalizeDependencyList(manifest),
       author: manifest.author || "",
       tags: Array.isArray(manifest.tags) ? manifest.tags.filter(tag => typeof tag === "string") : [],
       repo: manifest.repo || manifest.homepage || "",
       affectsStyle: manifest.affectsStyle === true,
       affectsGameplay: manifest.affectsGameplay === true || manifest.affectsBlocks === true,
-      repositoryId: "zip://mods.json",
-      repositoryName: "ZIP Archive",
+      repositoryId: repository?.id || "zip://mods.json",
+      repositoryName: repository?.name || sourceLabel,
       settingsSchema,
       requiredSettingsMissing: settingsState.missingRequired,
     };
@@ -1239,7 +1295,7 @@ export const ModManager = {
       return null;
     }
     const dependencies = normalizeDependencyList(manifest);
-    const size = normalizeModSize(manifest.modSize || manifest.size || entry.size);
+    const size = resolveModSize(manifest.modSize || manifest.size, manifest.id || entry.id, entry.size);
 
     return {
       id: modMeta.id,
@@ -1247,7 +1303,7 @@ export const ModManager = {
       requiredDeps: dependencies.required,
       optionalDeps: dependencies.optional,
       loadAfterDeps: dependencies.loadAfter,
-      load: () => this._loadSingleFromZip(entry, source, manifest, manifestPath),
+      load: () => this._loadSingleFromZip(entry, source, manifest, manifestPath, repository, sourceLabel),
     };
   },
 
@@ -1394,7 +1450,14 @@ export const ModManager = {
     }
   },
 
-  async _loadSingleFromZip(entry, source, preparedManifest = undefined, preparedManifestPath = undefined) {
+  async _loadSingleFromZip(
+    entry,
+    source,
+    preparedManifest = undefined,
+    preparedManifestPath = undefined,
+    repository = undefined,
+    sourceLabel = "ZIP Archive"
+  ) {
     const manifestPath = normalizeZipPath(preparedManifestPath || entry.manifest || `mods/${entry.id}/manifest.json`);
     let manifest = preparedManifest;
     if (!manifest) {
@@ -1415,8 +1478,8 @@ export const ModManager = {
       version: manifest.version || "0.0.0",
       description: manifest.description || "",
       manifestUrl: manifestPath,
-      repositoryId: "zip://mods.json",
-      repositoryName: "ZIP Archive",
+      repositoryId: repository?.id || "zip://mods.json",
+      repositoryName: repository?.name || sourceLabel,
       settingsSchema,
       requiredSettingsMissing: settingsState.missingRequired,
     };
@@ -1446,12 +1509,14 @@ export const ModManager = {
     } catch (error) {
       logger.error("Failed to import mod entry.", error);
       this.errors.push({ id: modMeta.id, error });
+      if (source && source !== this._zipSource) source.revokeAll();
       return;
     }
 
     const register = resolveRegister(modModule);
     if (!register) {
       logger.warn("No register() function found in mod entry.");
+      if (source && source !== this._zipSource) source.revokeAll();
       return;
     }
 
@@ -1461,11 +1526,12 @@ export const ModManager = {
       const unload = typeof unloadCallback === "function"
         ? unloadCallback
         : (typeof unloadCallback?.onUnload === "function" ? () => unloadCallback.onUnload(api) : null);
-      this.mods.push({ ...modMeta, api, entryUrl, manifest, unload, logger });
+      this.mods.push({ ...modMeta, api, entryUrl, manifest, unload, logger, zipSource: source });
       logger.info("Loaded");
     } catch (error) {
       logger.error("Mod registration failed.", error);
       this.errors.push({ id: modMeta.id, error });
+      if (source && source !== this._zipSource) source.revokeAll();
     }
   },
 
@@ -1481,7 +1547,7 @@ export const ModManager = {
         name: id,
         version: "",
         description: "",
-        size: normalizeModSize(entry.size),
+        size: resolveModSize(undefined, id, entry.size),
         dependencies: {
           required: [],
           optional: [],
@@ -1534,7 +1600,7 @@ export const ModManager = {
     info.name = modMeta.name || info.name || modMeta.id;
     info.version = modMeta.version || info.version || "";
     info.description = modMeta.description || info.description || "";
-    info.size = normalizeModSize(modMeta.size || info.size);
+    info.size = resolveModSize(modMeta.size, modMeta.id || info.id, info.size);
     if (modMeta.dependencies) {
       info.dependencies = {
         required: Array.from(new Set(modMeta.dependencies.required || [])),

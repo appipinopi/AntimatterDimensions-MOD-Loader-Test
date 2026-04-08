@@ -3,7 +3,6 @@
   "name": "Large Celestial Frontier",
   "version": "1.0.0",
   "apiVersion": 1,
-  "modSize": "large",
   "entry": "main.js",
   "description": "Large content pack with new stage flow and achievements."
 }

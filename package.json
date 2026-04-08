@@ -1,7 +1,8 @@
 {
   "private": true,
   "scripts": {
-    "serve": "node build/check-npm.js && vue-cli-service serve",
+    "serve": "node build/pack-mod-zips.js && node build/check-npm.js && vue-cli-service serve",
+    "mods:pack": "node build/pack-mod-zips.js",
     "build:master": "node build/pre-build.js && vue-cli-service build --mode master && node build/post-build.js",
     "build:release": "node build/pre-build.js && vue-cli-service build && node build/post-build.js",
     "build:steam-development": "node build/pre-build.js && vue-cli-service build --mode steam-development",

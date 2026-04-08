@@ -3,7 +3,6 @@
   "name": "Medium Fusion Link",
   "version": "1.0.0",
   "apiVersion": 1,
-  "modSize": "medium",
   "dependencies": [
     "large-celestial-frontier",
     "large-quantum-archives"

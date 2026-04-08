@@ -19,10 +19,17 @@ Each repository serves a `mods.json` file:
 {
   "schemaVersion": 1,
   "mods": [
-    { "id": "my-mod", "enabled": true }
+    {
+      "id": "my-mod",
+      "enabled": true,
+      "zip": "my-mod.zip",
+      "manifest": "manifest.json"
+    }
   ]
 }
 ```
+
+`zip` is supported directly in repository mode, so zipped mods can be loaded immediately without manual ZIP import.
 
 ## Manifest
 Each mod folder must include a `manifest.json` with at least:
@@ -78,8 +85,13 @@ export default defineMod({
 `mod-common.js` re-exports everything from `mod-sdk.js` and exposes `window.ModCommon`.
 See `public/mods/sdk/.docs/README.md` for more helpers.
 
+## ZIP Packaging
+- Run `npm run mods:pack` to regenerate all `public/mods/*.zip` archives.
+- Build scripts also pack ZIPs automatically before build.
+
 ## Sample Packs
 - `public/mods/large-celestial-frontier`
 - `public/mods/large-quantum-archives`
 - `public/mods/medium-fusion-link` (depends on both large packs)
 - `public/mods/small-safe-speed` (scoped speed utility)
+- `modSize` is optional. If omitted, loader infers from id prefix (`large-`, `medium-`, `small-`), otherwise defaults to `medium`.

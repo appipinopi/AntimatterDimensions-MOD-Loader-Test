@@ -3,7 +3,6 @@
   "name": "Small Safe Speed",
   "version": "1.0.0",
   "apiVersion": 1,
-  "modSize": "small",
   "entry": "main.js",
   "description": "Small utility speed controls using scoped multipliers without conflict."
 }
