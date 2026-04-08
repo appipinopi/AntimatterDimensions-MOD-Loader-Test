@@ -15,6 +15,9 @@ export default {
       repositoryTopicSearchUrl: "",
       modSearchQuery: "",
       selectedRepository: "all",
+      settingsEditor: null,
+      settingsDraft: {},
+      settingsError: "",
     };
   },
   computed: {
@@ -48,6 +51,19 @@ export default {
           return haystack.includes(query);
         })
         .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+    },
+    activeSettingsSchema() {
+      return Array.isArray(this.settingsEditor?.schema) ? this.settingsEditor.schema : [];
+    },
+    activeSettingsMissingRequired() {
+      const schema = this.activeSettingsSchema;
+      return schema
+        .filter(setting => setting.required)
+        .map(setting => setting.key)
+        .filter(key => {
+          const value = this.settingsDraft[key];
+          return value === undefined || value === null || (typeof value === "string" && value.trim() === "");
+        });
     },
   },
   methods: {
@@ -126,6 +142,61 @@ export default {
       if (repo.status === "disabled") return "disabled";
       if (repo.status === "error") return "error";
       return repo.status || "pending";
+    },
+    hasModSettings(mod) {
+      return Array.isArray(mod?.settingsSchema) && mod.settingsSchema.length > 0;
+    },
+    openModSettings(mod) {
+      if (!mod || !mod.id) return;
+      const state = ModManager.getModSettingsState(mod.id);
+      this.settingsEditor = {
+        modId: mod.id,
+        modName: mod.name || mod.id,
+        schema: state.schema || [],
+      };
+      this.settingsDraft = { ...(state.values || {}) };
+      this.settingsError = "";
+    },
+    closeModSettings() {
+      this.settingsEditor = null;
+      this.settingsDraft = {};
+      this.settingsError = "";
+    },
+    setDraftValue(key, value) {
+      this.$set(this.settingsDraft, key, value);
+    },
+    async saveModSettings() {
+      if (!this.settingsEditor?.modId) return;
+      this.settingsError = "";
+      try {
+        ModManager.setModSettings(this.settingsEditor.modId, this.settingsDraft);
+        await this.reloadMods();
+        const refreshed = ModManager.getModSettingsState(this.settingsEditor.modId);
+        this.settingsEditor = {
+          ...this.settingsEditor,
+          schema: refreshed.schema || [],
+        };
+        this.settingsDraft = { ...(refreshed.values || {}) };
+        if (GameUI?.notify?.info) GameUI.notify.info("Mod settings saved");
+      } catch (error) {
+        this.settingsError = error?.message || "Failed to save settings";
+      }
+    },
+    async resetModSettings() {
+      if (!this.settingsEditor?.modId) return;
+      ModManager.resetModSettings(this.settingsEditor.modId);
+      await this.reloadMods();
+      const refreshed = ModManager.getModSettingsState(this.settingsEditor.modId);
+      this.settingsEditor = {
+        ...this.settingsEditor,
+        schema: refreshed.schema || [],
+      };
+      this.settingsDraft = { ...(refreshed.values || {}) };
+      this.settingsError = "";
+      if (GameUI?.notify?.info) GameUI.notify.info("Mod settings reset");
+    },
+    formatSettingInputId(modId, key) {
+      return `mod-setting-${modId}-${key}`;
     },
   }
 };
@@ -291,14 +362,108 @@ export default {
             <div v-if="mod.tags && mod.tags.length > 0" class="mod-classic__item-meta">
               tags: {{ mod.tags.join(", ") }}
             </div>
+            <div v-if="mod.settingsSchema && mod.settingsSchema.length > 0" class="mod-classic__item-meta">
+              settings: {{ mod.settingsSchema.length }}
+            </div>
+            <div
+              v-if="mod.requiredSettingsMissing && mod.requiredSettingsMissing.length > 0"
+              class="mod-classic__item-meta mod-classic__item-meta--warn"
+            >
+              required settings missing: {{ mod.requiredSettingsMissing.join(", ") }}
+            </div>
           </div>
-          <button
-            class="mod-classic__btn mod-classic__btn--toggle mod-classic__btn--small"
-            :class="{ 'is-active': isModEnabled(mod.id) }"
-            @click="toggleMod(mod.id)"
-          >
-            {{ isModEnabled(mod.id) ? "ON" : "OFF" }}
+          <div class="mod-classic__item-actions">
+            <button
+              class="mod-classic__btn mod-classic__btn--ghost mod-classic__btn--small"
+              :disabled="!hasModSettings(mod)"
+              @click="openModSettings(mod)"
+            >
+              SETTINGS
+            </button>
+            <button
+              class="mod-classic__btn mod-classic__btn--toggle mod-classic__btn--small"
+              :class="{ 'is-active': isModEnabled(mod.id) }"
+              @click="toggleMod(mod.id)"
+            >
+              {{ isModEnabled(mod.id) ? "ON" : "OFF" }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="settingsEditor" class="mod-classic__card mod-classic__card--wide">
+      <div class="mod-classic__card-head-row">
+        <div class="mod-classic__card-title">Settings: {{ settingsEditor.modName }}</div>
+        <div class="mod-classic__filters">
+          <button class="mod-classic__btn mod-classic__btn--ghost mod-classic__btn--small" @click="resetModSettings">
+            RESET
           </button>
+          <button class="mod-classic__btn mod-classic__btn--small" @click="saveModSettings">
+            SAVE
+          </button>
+          <button class="mod-classic__btn mod-classic__btn--ghost mod-classic__btn--small" @click="closeModSettings">
+            CLOSE
+          </button>
+        </div>
+      </div>
+      <div
+        v-if="activeSettingsMissingRequired.length > 0"
+        class="mod-classic__item-meta mod-classic__item-meta--warn mod-classic__settings-warning"
+      >
+        required settings missing: {{ activeSettingsMissingRequired.join(", ") }}
+      </div>
+      <div v-if="settingsError" class="mod-classic__item-meta mod-classic__item-meta--warn mod-classic__settings-warning">
+        {{ settingsError }}
+      </div>
+      <div v-if="activeSettingsSchema.length === 0" class="mod-classic__empty">No configurable settings in manifest</div>
+      <div v-else class="mod-classic__settings-list">
+        <div v-for="setting in activeSettingsSchema" :key="setting.key" class="mod-classic__settings-item">
+          <label class="mod-classic__settings-label" :for="formatSettingInputId(settingsEditor.modId, setting.key)">
+            {{ setting.label }}
+            <span v-if="setting.required" class="mod-classic__settings-required">*</span>
+          </label>
+          <div v-if="setting.description" class="mod-classic__item-meta">{{ setting.description }}</div>
+          <input
+            v-if="setting.type === 'string'"
+            :id="formatSettingInputId(settingsEditor.modId, setting.key)"
+            class="mod-classic__input"
+            type="text"
+            :value="settingsDraft[setting.key] === undefined || settingsDraft[setting.key] === null ? '' : settingsDraft[setting.key]"
+            @input="setDraftValue(setting.key, $event.target.value)"
+          >
+          <input
+            v-else-if="setting.type === 'number'"
+            :id="formatSettingInputId(settingsEditor.modId, setting.key)"
+            class="mod-classic__input"
+            type="number"
+            :min="setting.min"
+            :max="setting.max"
+            :step="setting.step || 1"
+            :value="settingsDraft[setting.key] === undefined || settingsDraft[setting.key] === null ? '' : settingsDraft[setting.key]"
+            @input="setDraftValue(setting.key, $event.target.value)"
+          >
+          <select
+            v-else-if="setting.type === 'select'"
+            :id="formatSettingInputId(settingsEditor.modId, setting.key)"
+            class="mod-classic__input mod-classic__select"
+            :value="settingsDraft[setting.key] === undefined || settingsDraft[setting.key] === null ? '' : settingsDraft[setting.key]"
+            @change="setDraftValue(setting.key, $event.target.value)"
+          >
+            <option value="">-- select --</option>
+            <option v-for="option in (setting.options || [])" :key="`${setting.key}-${option.label}`" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+          <label v-else-if="setting.type === 'boolean'" class="mod-classic__settings-checkbox">
+            <input
+              :id="formatSettingInputId(settingsEditor.modId, setting.key)"
+              type="checkbox"
+              :checked="Boolean(settingsDraft[setting.key])"
+              @change="setDraftValue(setting.key, $event.target.checked)"
+            >
+            <span>{{ Boolean(settingsDraft[setting.key]) ? "Enabled" : "Disabled" }}</span>
+          </label>
         </div>
       </div>
     </div>
@@ -406,6 +571,11 @@ export default {
   color: #ffffff;
 }
 
+.mod-classic__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .mod-classic__input {
   width: 100%;
   min-width: 20rem;
@@ -501,6 +671,10 @@ export default {
   color: #ffffff;
 }
 
+.mod-classic__item-meta--warn {
+  color: #ffffff;
+}
+
 .mod-classic__repo-topic {
   margin-bottom: 0.8rem;
 }
@@ -516,6 +690,52 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+}
+
+.mod-classic__item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.mod-classic__settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mod-classic__settings-item {
+  border-bottom: 1px solid rgba(80, 255, 120, 0.35);
+  padding-bottom: 0.8rem;
+}
+
+.mod-classic__settings-item:last-child {
+  border-bottom: none;
+}
+
+.mod-classic__settings-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+  color: #ffffff;
+}
+
+.mod-classic__settings-required {
+  margin-left: 0.2rem;
+}
+
+.mod-classic__settings-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 1rem;
+  color: #ffffff;
+}
+
+.mod-classic__settings-warning {
+  margin-bottom: 0.8rem;
 }
 
 .mod-classic__link {
@@ -536,6 +756,10 @@ export default {
   .mod-classic__item--row {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .mod-classic__item-actions {
+    width: 100%;
   }
 
   .mod-classic__input,

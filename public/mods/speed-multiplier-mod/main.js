@@ -10,6 +10,16 @@ function formatSpeed(value) {
 export default defineMod({
   onInit(api) {
     const speed = createSpeedController(api, "speed-multiplier");
+    const configuredDefault = Number(api.settings.get("defaultMultiplier", 1.5));
+    const defaultMultiplier = SPEED_OPTIONS.includes(configuredDefault) ? configuredDefault : 1.5;
+    const showFloatingPanel = api.settings.get("showFloatingPanel", true) !== false;
+
+    const stored = api.storage.get(STORAGE_KEY, null);
+    const initial = SPEED_OPTIONS.includes(stored) ? stored : defaultMultiplier;
+    speed.set(initial);
+
+    if (!showFloatingPanel) return;
+
     addStyle(
       `
       .mod-speed-panel {
@@ -97,16 +107,14 @@ export default defineMod({
     panel.appendChild(current);
     panel.appendChild(buttons);
 
-    const stored = api.storage.get(STORAGE_KEY, null);
-    const initial = SPEED_OPTIONS.includes(stored) ? stored : null;
-    if (initial) speed.set(initial);
     updateUI(initial);
   },
   onGameLoad(api) {
     const speed = createSpeedController(api, "speed-multiplier");
+    const configuredDefault = Number(api.settings.get("defaultMultiplier", 1.5));
+    const defaultMultiplier = SPEED_OPTIONS.includes(configuredDefault) ? configuredDefault : 1.5;
     const stored = api.storage.get(STORAGE_KEY, null);
-    if (SPEED_OPTIONS.includes(stored)) {
-      speed.set(stored);
-    }
+    const next = SPEED_OPTIONS.includes(stored) ? stored : defaultMultiplier;
+    speed.set(next);
   }
 });

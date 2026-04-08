@@ -38,6 +38,11 @@ Optional fields for large-scale packs:
 - `optionalDependencies`: optional load-after IDs
 - `requiredPlugins`: alias of required dependencies (Easy-BDP style metadata)
 - `author`, `tags`, `repo`, `affectsStyle`, `affectsGameplay`
+- `settings`: configurable schema shown in the Mods settings UI
+  - `key`, `label`, `description`, `type` (`string|number|boolean|select`)
+  - `required`, `default`
+  - for `number`: `min`, `max`, `step`
+  - for `select`: `options` (either values or `{ label, value }`)
 
 ## Entry API
 The entry module must export a `register(api)` function (default or named). The `api` provides:
@@ -49,6 +54,7 @@ The entry module must export a `register(api)` function (default or named). The 
 - `api.events.onLogic(event, fn)`
 - `api.events.onUI(event, fn)`
 - `api.storage.get/set/remove`
+- `api.settings.get/set/getAll/getSchema/onChange`
 - `api.ui.createContainer(suffix, parentSelector)`
 
 These hooks run after core logic to avoid changing the base calculation flow.

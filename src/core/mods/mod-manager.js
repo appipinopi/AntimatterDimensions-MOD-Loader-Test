@@ -4,6 +4,7 @@ import { DEV } from "@/env";
 const MOD_API_VERSION = 1;
 const CONFIG_KEY = "admod:config";
 const REPOSITORY_LIST_URL = "mods/repositories.json";
+const SETTINGS_STORAGE_PREFIX = "admod:settings:";
 const ZIP_STORAGE_DB = "admod";
 const ZIP_STORAGE_STORE = "zip-mods";
 const ZIP_STORAGE_KEY = "last";
@@ -102,6 +103,109 @@ function normalizeStringList(list) {
   return list
     .filter(item => typeof item === "string" && item.trim())
     .map(item => item.trim());
+}
+
+function normalizeSettingType(type, fallbackValue = undefined) {
+  if (typeof type === "string") {
+    const normalized = type.trim().toLowerCase();
+    if (normalized === "number" || normalized === "boolean" || normalized === "string" || normalized === "select") {
+      return normalized;
+    }
+  }
+
+  if (typeof fallbackValue === "boolean") return "boolean";
+  if (typeof fallbackValue === "number") return "number";
+  return "string";
+}
+
+function normalizeSettingOption(option, index) {
+  if (option && typeof option === "object" && "value" in option) {
+    return {
+      value: option.value,
+      label: typeof option.label === "string" && option.label.trim()
+        ? option.label.trim()
+        : String(option.value),
+    };
+  }
+  return {
+    value: option,
+    label: String(option ?? `option-${index + 1}`),
+  };
+}
+
+function normalizeManifestSettings(rawSettings) {
+  if (!rawSettings) return [];
+
+  const rows = [];
+  if (Array.isArray(rawSettings)) {
+    for (const item of rawSettings) {
+      if (item && typeof item === "object") rows.push(item);
+    }
+  } else if (typeof rawSettings === "object") {
+    for (const key of Object.keys(rawSettings)) {
+      const item = rawSettings[key];
+      if (item && typeof item === "object") rows.push({ key, ...item });
+      else rows.push({ key, default: item });
+    }
+  }
+
+  const settings = [];
+  const usedKeys = new Set();
+  for (const row of rows) {
+    const key = typeof row.key === "string" && row.key.trim() ? row.key.trim() : "";
+    if (!key || usedKeys.has(key)) continue;
+    usedKeys.add(key);
+
+    const type = normalizeSettingType(row.type, row.default);
+    const label = typeof row.label === "string" && row.label.trim() ? row.label.trim() : key;
+    const description = typeof row.description === "string" ? row.description.trim() : "";
+    const required = row.required === true;
+
+    let defaultValue = row.default;
+    let options = [];
+    if (type === "boolean") {
+      if (defaultValue !== undefined) defaultValue = Boolean(defaultValue);
+    } else if (type === "number") {
+      if (defaultValue !== undefined) {
+        const numeric = Number(defaultValue);
+        defaultValue = Number.isFinite(numeric) ? numeric : undefined;
+      }
+    } else if (type === "string") {
+      if (defaultValue !== undefined && defaultValue !== null) defaultValue = String(defaultValue);
+    } else if (type === "select") {
+      const rawOptions = Array.isArray(row.options) ? row.options : [];
+      options = rawOptions
+        .map((option, index) => normalizeSettingOption(option, index))
+        .filter(option => option.label && option.value !== undefined);
+      if (defaultValue === undefined && options.length > 0) {
+        defaultValue = options[0].value;
+      }
+    }
+
+    const setting = {
+      key,
+      type,
+      label,
+      description,
+      required,
+      defaultValue,
+    };
+
+    if (type === "number") {
+      if (Number.isFinite(Number(row.min))) setting.min = Number(row.min);
+      if (Number.isFinite(Number(row.max))) setting.max = Number(row.max);
+      if (Number.isFinite(Number(row.step)) && Number(row.step) > 0) setting.step = Number(row.step);
+    }
+    if (type === "select") setting.options = options;
+
+    settings.push(setting);
+  }
+
+  return settings;
+}
+
+function isSettingMissing(value) {
+  return value === undefined || value === null || (typeof value === "string" && value.trim() === "");
 }
 
 function normalizeModSize(size) {
@@ -297,6 +401,24 @@ function createModApi(modMeta) {
     }
   };
 
+  const settings = {
+    get(key, fallback = undefined) {
+      return ModManager.getModSetting(modMeta.id, key, fallback);
+    },
+    set(key, value) {
+      return ModManager.setModSetting(modMeta.id, key, value);
+    },
+    getAll() {
+      return ModManager.getModSettings(modMeta.id);
+    },
+    getSchema() {
+      return ModManager.getModSettingsSchema(modMeta.id);
+    },
+    onChange(handler) {
+      return ModManager.registerSettingsListener(modMeta.id, handler);
+    },
+  };
+
   return Object.freeze({
     apiVersion: MOD_API_VERSION,
     mod: Object.freeze({
@@ -311,6 +433,7 @@ function createModApi(modMeta) {
     events,
     ui,
     gameSpeed,
+    settings,
   });
 }
 
@@ -411,6 +534,7 @@ export const ModManager = {
   },
   _eventBridgeInstalled: false,
   _zipSource: null,
+  _settingsListeners: new Map(),
   availableMods: new Map(),
   repositories: [],
   repositoryTopicSearchUrl: "",
@@ -467,6 +591,8 @@ export const ModManager = {
       sources: Array.from(info.sources || []),
       repositoryIds: Array.from(info.repositoryIds || []),
       repositoryNames: Array.from(info.repositoryNames || []),
+      settingsSchema: Array.isArray(info.settingsSchema) ? info.settingsSchema.map(item => ({ ...item })) : [],
+      requiredSettingsMissing: Array.isArray(info.requiredSettingsMissing) ? [...info.requiredSettingsMissing] : [],
       enabled: !this.isModDisabled(info.id),
     }));
   },
@@ -477,6 +603,205 @@ export const ModManager = {
 
   getRepositoryTopicSearchUrl() {
     return this.repositoryTopicSearchUrl || "";
+  },
+
+  _getSettingsStorageKey(modId) {
+    return `${SETTINGS_STORAGE_PREFIX}${modId}`;
+  },
+
+  _readModSettingsRaw(modId) {
+    if (!modId) return {};
+    try {
+      const raw = localStorage.getItem(this._getSettingsStorageKey(modId));
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      return parsed;
+    } catch (error) {
+      console.warn(`[ModManager] Failed to read settings for ${modId}`, error);
+      return {};
+    }
+  },
+
+  _writeModSettingsRaw(modId, values) {
+    if (!modId) return;
+    try {
+      localStorage.setItem(this._getSettingsStorageKey(modId), JSON.stringify(values || {}));
+    } catch (error) {
+      console.warn(`[ModManager] Failed to save settings for ${modId}`, error);
+    }
+  },
+
+  _coerceSettingValue(schema, value) {
+    if (!schema) return value;
+    if (value === undefined || value === null) return undefined;
+    switch (schema.type) {
+      case "boolean":
+        if (typeof value === "boolean") return value;
+        if (typeof value === "string") {
+          const normalized = value.trim().toLowerCase();
+          if (normalized === "true" || normalized === "1" || normalized === "on") return true;
+          if (normalized === "false" || normalized === "0" || normalized === "off") return false;
+        }
+        return Boolean(value);
+      case "number": {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return undefined;
+        if (Number.isFinite(schema.min) && numeric < schema.min) return schema.min;
+        if (Number.isFinite(schema.max) && numeric > schema.max) return schema.max;
+        return numeric;
+      }
+      case "select": {
+        const options = Array.isArray(schema.options) ? schema.options : [];
+        if (options.length === 0) return value;
+        const match = options.find(option => String(option.value) === String(value));
+        return match ? match.value : undefined;
+      }
+      case "string":
+      default:
+        return String(value);
+    }
+  },
+
+  _buildSettingsState(modId, schemaInput = undefined) {
+    const schema = (schemaInput || this.getModSettingsSchema(modId)).map(item => ({ ...item }));
+    const schemaMap = new Map(schema.map(item => [item.key, item]));
+    const raw = this._readModSettingsRaw(modId);
+    const values = {};
+
+    for (const field of schema) {
+      const hasStored = Object.prototype.hasOwnProperty.call(raw, field.key);
+      const candidate = hasStored ? raw[field.key] : field.defaultValue;
+      const coerced = this._coerceSettingValue(field, candidate);
+      if (coerced !== undefined) values[field.key] = coerced;
+    }
+
+    for (const key of Object.keys(raw)) {
+      if (schemaMap.has(key)) continue;
+      values[key] = raw[key];
+    }
+
+    const missingRequired = schema
+      .filter(field => field.required)
+      .map(field => field.key)
+      .filter(key => isSettingMissing(values[key]));
+
+    return {
+      modId,
+      schema,
+      values,
+      missingRequired,
+      valid: missingRequired.length === 0,
+    };
+  },
+
+  getModSettingsSchema(modId) {
+    if (!modId) return [];
+    const info = this.availableMods.get(modId);
+    if (info && Array.isArray(info.settingsSchema)) {
+      return info.settingsSchema.map(item => ({ ...item }));
+    }
+    const loaded = this.mods.find(mod => mod.id === modId);
+    if (loaded?.manifest?.settings) {
+      return normalizeManifestSettings(loaded.manifest.settings);
+    }
+    return [];
+  },
+
+  getModSettingsState(modId) {
+    return this._buildSettingsState(modId);
+  },
+
+  getModSettings(modId) {
+    return this._buildSettingsState(modId).values;
+  },
+
+  getModSetting(modId, key, fallback = undefined) {
+    const state = this._buildSettingsState(modId);
+    if (!Object.prototype.hasOwnProperty.call(state.values, key)) return fallback;
+    const value = state.values[key];
+    return value === undefined ? fallback : value;
+  },
+
+  setModSettings(modId, updates) {
+    if (!modId || !updates || typeof updates !== "object") {
+      return this._buildSettingsState(modId);
+    }
+    const schema = this.getModSettingsSchema(modId);
+    const schemaMap = new Map(schema.map(item => [item.key, item]));
+    const raw = this._readModSettingsRaw(modId);
+
+    for (const key of Object.keys(updates)) {
+      const schemaField = schemaMap.get(key);
+      const incoming = updates[key];
+      if (incoming === undefined || incoming === null || incoming === "") {
+        delete raw[key];
+        continue;
+      }
+      const coerced = this._coerceSettingValue(schemaField, incoming);
+      if (coerced === undefined) {
+        delete raw[key];
+        continue;
+      }
+      raw[key] = coerced;
+    }
+
+    this._writeModSettingsRaw(modId, raw);
+    const state = this._buildSettingsState(modId, schema);
+    const info = this.availableMods.get(modId);
+    if (info) {
+      info.requiredSettingsMissing = [...state.missingRequired];
+      this.availableMods.set(modId, info);
+    }
+    this._emitSettingsChanged(modId, state);
+    return state;
+  },
+
+  setModSetting(modId, key, value) {
+    return this.setModSettings(modId, { [key]: value });
+  },
+
+  resetModSettings(modId) {
+    if (!modId) return this._buildSettingsState(modId);
+    localStorage.removeItem(this._getSettingsStorageKey(modId));
+    const state = this._buildSettingsState(modId);
+    const info = this.availableMods.get(modId);
+    if (info) {
+      info.requiredSettingsMissing = [...state.missingRequired];
+      this.availableMods.set(modId, info);
+    }
+    this._emitSettingsChanged(modId, state);
+    return state;
+  },
+
+  registerSettingsListener(modId, handler) {
+    if (!modId || typeof handler !== "function") return () => {};
+    const key = String(modId);
+    let listeners = this._settingsListeners.get(key);
+    if (!listeners) {
+      listeners = new Set();
+      this._settingsListeners.set(key, listeners);
+    }
+    listeners.add(handler);
+    return () => {
+      const current = this._settingsListeners.get(key);
+      if (!current) return;
+      current.delete(handler);
+      if (current.size === 0) this._settingsListeners.delete(key);
+    };
+  },
+
+  _emitSettingsChanged(modId, state = undefined) {
+    const listeners = this._settingsListeners.get(String(modId));
+    if (!listeners || listeners.size === 0) return;
+    const payload = state || this._buildSettingsState(modId);
+    for (const listener of listeners) {
+      try {
+        listener(payload);
+      } catch (error) {
+        console.warn(`[ModManager] Settings listener failed for ${modId}`, error);
+      }
+    }
   },
 
   resetHooks() {
@@ -506,6 +831,7 @@ export const ModManager = {
           console.warn(`[ModManager] Failed to unregister runtime for ${mod.id}`, error);
         }
       }
+      this._settingsListeners.delete(String(mod.id));
     }
     this.mods = [];
     this.errors = [];
@@ -832,6 +1158,8 @@ export const ModManager = {
       return null;
     }
 
+    const settingsSchema = normalizeManifestSettings(manifest.settings);
+    const settingsState = this._buildSettingsState(manifest.id || entry.id, settingsSchema);
     const modMeta = {
       id: manifest.id || entry.id,
       name: manifest.name || entry.id,
@@ -847,8 +1175,17 @@ export const ModManager = {
       affectsGameplay: manifest.affectsGameplay === true || manifest.affectsBlocks === true,
       repositoryId: repository?.id || "",
       repositoryName: repository?.name || "",
+      settingsSchema,
+      requiredSettingsMissing: settingsState.missingRequired,
     };
     this._updateAvailableMeta(modMeta);
+    if (!settingsState.valid) {
+      this.errors.push({
+        id: modMeta.id,
+        error: new Error(`Required settings missing: ${settingsState.missingRequired.join(", ")}`),
+      });
+      return null;
+    }
     const dependencies = normalizeDependencyList(manifest);
     const size = normalizeModSize(manifest.modSize || manifest.size || entry.size);
 
@@ -873,6 +1210,8 @@ export const ModManager = {
       return null;
     }
 
+    const settingsSchema = normalizeManifestSettings(manifest.settings);
+    const settingsState = this._buildSettingsState(manifest.id || entry.id, settingsSchema);
     const modMeta = {
       id: manifest.id || entry.id,
       name: manifest.name || entry.id,
@@ -888,8 +1227,17 @@ export const ModManager = {
       affectsGameplay: manifest.affectsGameplay === true || manifest.affectsBlocks === true,
       repositoryId: "zip://mods.json",
       repositoryName: "ZIP Archive",
+      settingsSchema,
+      requiredSettingsMissing: settingsState.missingRequired,
     };
     this._updateAvailableMeta(modMeta);
+    if (!settingsState.valid) {
+      this.errors.push({
+        id: modMeta.id,
+        error: new Error(`Required settings missing: ${settingsState.missingRequired.join(", ")}`),
+      });
+      return null;
+    }
     const dependencies = normalizeDependencyList(manifest);
     const size = normalizeModSize(manifest.modSize || manifest.size || entry.size);
 
@@ -986,6 +1334,8 @@ export const ModManager = {
       }
     }
 
+    const settingsSchema = normalizeManifestSettings(manifest.settings);
+    const settingsState = this._buildSettingsState(manifest.id || entry.id, settingsSchema);
     const modMeta = {
       id: manifest.id || entry.id,
       name: manifest.name || entry.id,
@@ -994,8 +1344,17 @@ export const ModManager = {
       manifestUrl,
       repositoryId: repository?.id || "",
       repositoryName: repository?.name || "",
+      settingsSchema,
+      requiredSettingsMissing: settingsState.missingRequired,
     };
     this._updateAvailableMeta(modMeta);
+    if (!settingsState.valid) {
+      this.errors.push({
+        id: modMeta.id,
+        error: new Error(`Required settings missing: ${settingsState.missingRequired.join(", ")}`),
+      });
+      return;
+    }
     const logger = createLogger(modMeta.id, modMeta.name);
 
     if (manifest.apiVersion !== undefined && manifest.apiVersion !== MOD_API_VERSION) {
@@ -1048,6 +1407,8 @@ export const ModManager = {
       }
     }
 
+    const settingsSchema = normalizeManifestSettings(manifest.settings);
+    const settingsState = this._buildSettingsState(manifest.id || entry.id, settingsSchema);
     const modMeta = {
       id: manifest.id || entry.id,
       name: manifest.name || entry.id,
@@ -1056,8 +1417,17 @@ export const ModManager = {
       manifestUrl: manifestPath,
       repositoryId: "zip://mods.json",
       repositoryName: "ZIP Archive",
+      settingsSchema,
+      requiredSettingsMissing: settingsState.missingRequired,
     };
     this._updateAvailableMeta(modMeta);
+    if (!settingsState.valid) {
+      this.errors.push({
+        id: modMeta.id,
+        error: new Error(`Required settings missing: ${settingsState.missingRequired.join(", ")}`),
+      });
+      return;
+    }
     const logger = createLogger(modMeta.id, modMeta.name);
 
     if (manifest.apiVersion !== undefined && manifest.apiVersion !== MOD_API_VERSION) {
@@ -1125,6 +1495,8 @@ export const ModManager = {
         sources: new Set(),
         repositoryIds: new Set(),
         repositoryNames: new Set(),
+        settingsSchema: [],
+        requiredSettingsMissing: [],
         manifest: entry.manifest || "",
       };
     }
@@ -1155,6 +1527,8 @@ export const ModManager = {
         sources: new Set(),
         repositoryIds: new Set(),
         repositoryNames: new Set(),
+        settingsSchema: [],
+        requiredSettingsMissing: [],
       };
     }
     info.name = modMeta.name || info.name || modMeta.id;
@@ -1173,6 +1547,12 @@ export const ModManager = {
     info.repo = modMeta.repo || info.repo || "";
     info.affectsStyle = modMeta.affectsStyle === true || info.affectsStyle === true;
     info.affectsGameplay = modMeta.affectsGameplay === true || info.affectsGameplay === true;
+    if (Array.isArray(modMeta.settingsSchema)) {
+      info.settingsSchema = modMeta.settingsSchema.map(item => ({ ...item }));
+    }
+    if (Array.isArray(modMeta.requiredSettingsMissing)) {
+      info.requiredSettingsMissing = Array.from(new Set(modMeta.requiredSettingsMissing));
+    }
     if (modMeta.repositoryId) info.repositoryIds.add(modMeta.repositoryId);
     if (modMeta.repositoryName) info.repositoryNames.add(modMeta.repositoryName);
     this.availableMods.set(modMeta.id, info);

@@ -4,5 +4,31 @@
   "version": "1.0.0",
   "apiVersion": 1,
   "entry": "main.js",
-  "description": "Adds quick game speed multipliers (1.5x to 100x)."
+  "description": "Adds quick game speed multipliers (1.5x to 100x).",
+  "settings": [
+    {
+      "key": "defaultMultiplier",
+      "label": "Default Multiplier",
+      "description": "Applied automatically on load.",
+      "type": "select",
+      "required": true,
+      "default": 1.5,
+      "options": [
+        { "label": "1.5x", "value": 1.5 },
+        { "label": "2x", "value": 2 },
+        { "label": "3x", "value": 3 },
+        { "label": "5x", "value": 5 },
+        { "label": "10x", "value": 10 },
+        { "label": "20x", "value": 20 },
+        { "label": "100x", "value": 100 }
+      ]
+    },
+    {
+      "key": "showFloatingPanel",
+      "label": "Show Floating Panel",
+      "description": "Display the in-game speed panel UI.",
+      "type": "boolean",
+      "default": true
+    }
+  ]
 }
