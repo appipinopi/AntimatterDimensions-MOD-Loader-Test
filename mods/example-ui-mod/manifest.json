@@ -1,0 +1,8 @@
+﻿{
+  "id": "example-ui-mod",
+  "name": "Example UI Mod",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "entry": "main.js",
+  "description": "Adds a small badge and logs when the game loads."
+}

@@ -1,0 +1,8 @@
+{
+  "id": "large-quantum-archives",
+  "name": "Large Quantum Archives",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "entry": "main.js",
+  "description": "Large expansion with additional staged progression and achievements."
+}

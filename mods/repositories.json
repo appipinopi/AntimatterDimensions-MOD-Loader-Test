@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "topicSearchUrl": "https://github.com/topics/antimod",
+  "repositories": [
+    {
+      "id": "ad-local",
+      "name": "AD Local Repository",
+      "description": "Built-in repository shipped with this game build.",
+      "listUrl": "mods/mods.json",
+      "homepage": "https://github.com/appipinopi/AntimatterDimensions-MOD-Loader-Test",
+      "enabled": true,
+      "tags": ["official", "local"]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "medium-fusion-link",
+  "name": "Medium Fusion Link",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "dependencies": [
+    "large-celestial-frontier",
+    "large-quantum-archives"
+  ],
+  "entry": "main.js",
+  "description": "Medium pack that depends on the large packs and adds linked progression."
+}

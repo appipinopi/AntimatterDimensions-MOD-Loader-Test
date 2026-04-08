@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "mods": [
+    {
+      "id": "example-ui-mod",
+      "enabled": true,
+      "zip": "example-ui-mod.zip",
+      "manifest": "manifest.json"
+    },
+    {
+      "id": "large-celestial-frontier",
+      "enabled": true,
+      "zip": "large-celestial-frontier.zip",
+      "manifest": "manifest.json"
+    },
+    {
+      "id": "large-quantum-archives",
+      "enabled": true,
+      "zip": "large-quantum-archives.zip",
+      "manifest": "manifest.json"
+    },
+    {
+      "id": "medium-fusion-link",
+      "enabled": true,
+      "zip": "medium-fusion-link.zip",
+      "manifest": "manifest.json"
+    },
+    {
+      "id": "small-safe-speed",
+      "enabled": true,
+      "zip": "small-safe-speed.zip",
+      "manifest": "manifest.json"
+    },
+    {
+      "id": "speed-multiplier-mod",
+      "enabled": true,
+      "zip": "speed-multiplier-mod.zip",
+      "manifest": "manifest.json"
+    }
+  ]
+}
